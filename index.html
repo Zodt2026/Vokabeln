@@ -178,6 +178,7 @@ table.proto td,table.proto th{white-space:nowrap;padding-right:14px}
 .card.lang{cursor:pointer}
 .card.lang.sel{border-color:var(--blue);box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 30%,transparent)}
 .pill.n{background:var(--line);color:var(--ink)}
+.pill.gift{background:#fff1b8;color:#5a4400;white-space:normal}
 @media (max-width:480px){nav.tabs button{font-size:12.5px}}
 table.v.sm tbody tr{cursor:pointer}
 table.v tr.selrow td{background:color-mix(in srgb,var(--marker) 24%,transparent)}
@@ -344,7 +345,7 @@ const S = {
   tasks: {}, kid: null, taskLoaded: false, vocabLoaded: false,
   vocab: {}, blockDocs: {}, log: [],
   tab: "start", home: null, hlang: null, hdir: {}, vlang: null, vq: "", vlimit: 60, logKid: "all", lastTag: ["", "", ""], vtag: ["", "", ""], vopen: false, vsel: new Set(), vselMode: false,
-  exams: {}, examLog: [], examLoaded: false, mode: "lernen", finalizing: false, finalFail: 0,
+  exams: {}, examLog: [], examLoaded: false, mode: "lernen", finalizing: false, finalFail: 0, asgs: {}, pts: {},
   parentUntil: 0, fails: 0, lockedUntil: 0, busy: false, migrating: false
 };
 Object.defineProperty(S, "task", { get() { return S.tasks[S.kid] || null; }, set(v) { if (v) S.tasks[S.kid] = v; else delete S.tasks[S.kid]; } });
@@ -502,14 +503,14 @@ function drawItems(lang, dir, from, to, kid, flt) {
     return { n, f: w.f, d: w.d, q: dir === "d2f" ? w.d : w.f, s: dir === "d2f" ? w.f : w.d, a: "", ok: null };
   }) };
 }
-async function createTask(kid, lang, dir, from, to, flt, tips, sel) {
+async function createTask(kid, lang, dir, from, to, flt, tips, sel, extra) {
   const langName = (S.settings.langs.find(l => l.id === lang) || {}).name || "";
   const mode = sel || (fltHas(flt) ? "tags" : "range");
   const f2 = mode === "tags" ? { s: (flt && flt.s) || "", k: (flt && flt.k) || "", l: (flt && flt.l) || "" } : { s: "", k: "", l: "" };
   if (mode === "tags") { from = 1; to = MAXV; }
   const { items } = drawItems(lang, dir, from, to, kid, f2);
   if (!items.length) { toast("Im gewählten Bereich sind keine passenden Vokabeln eingetragen."); return false; }
-  const task = { kid, kidName: kidName(kid), state: "OFFEN", lang, langName, dir, from, to, flt: f2, sel: mode, tips: !!tips, rep: 0, created: Date.now(), counted: false, items };
+  const task = { kid, kidName: kidName(kid), state: "OFFEN", lang, langName, dir, from, to, flt: f2, sel: mode, tips: !!tips, rep: 0, created: Date.now(), counted: false, src: (extra && extra.src) || "self", ...(extra && extra.asg ? { asg: extra.asg } : {}), items };
   await wset("task/" + kid, task);
   S.tasks[kid] = task;
   return true;
@@ -518,7 +519,7 @@ async function createTask(kid, lang, dir, from, to, flt, tips, sel) {
 /* ------------------------------------------------------------------ Prüfen */
 const norm = s => String(s == null ? "" : s).normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("de");
 function hintParts(sol, level) {
-  const chars = Array.from(String(sol).split(";")[0].trim().replace(/\s+/g, " "));
+  const chars = Array.from(String(sol).split(";").map(x => x.trim()).filter(Boolean).join("; ").replace(/\s+/g, " "));
   const isL = ch => /\p{L}/u.test(ch), first = chars.findIndex(isL);
   return { mask: chars.map((ch, i) => isL(ch) ? (level >= 2 && i === first ? ch : "*") : ch).join(""), n: chars.length };
 }
@@ -527,7 +528,11 @@ const normExact = s => String(s == null ? "" : s).normalize("NFC").trim().replac
 function isCorrect(ans, sol) {
   const a = normExact(ans);
   if (!a) return false;
-  return String(sol).split(";").some(p => normExact(p) === a);
+  const alts = String(sol).split(";").map(normExact).filter(Boolean);
+  if (alts.includes(a)) return true;
+  /* Mehrere Bedeutungen komplett eingetippt (z. B. „und; auch“, auch in anderer Reihenfolge): richtig, wenn jede einzelne stimmt */
+  const parts = a.split(";").map(normExact).filter(Boolean);
+  return parts.length > 1 && new Set(parts).size === parts.length && parts.every(p => alts.includes(p));
 }
 /* ---- Abgegebene Antwort: Fehler gelb markieren (außer das ganze Wort ist falsch) ---- */
 function alignAnswer(a, s) {
@@ -590,8 +595,14 @@ async function finalizeCounts(kid) {
   }
   await saveWords(t.lang, words);
   await wset("log/s" + t.created + "_" + kid, { ts: t.submitted, kid, kidName: kidName(kid), lang: t.lang, langName: t.langName, dir: t.dir, from: t.from, to: t.to, n: t.items.length, ok: t.ok, bad: t.bad, rep: t.rep || 0, flt: t.flt || null, sel: selMode(t), items: t.items.map(i => [i.q, i.a || "", i.s, i.ok ? 1 : 0, i.tip || 0]) });
-  await wupdate("task/" + kid, { counted: true });
-  S.tasks[kid] = { ...t, counted: true };
+  let pts = 0;
+  if (!((t.rep || 0) >= 1)) {      /* Wiederholung derselben Vokabeln: keine Punkte, kein Auftragsfortschritt */
+    const pct = 100 * t.ok / Math.max(1, t.items.length);
+    if (pct + 1e-9 >= PT.min) { const cat = (t.src === "admin" || t.asg) ? 2 : 1; pts = cat === 2 ? PT.asg : PT.own; await awardPoints(kid, "t" + t.created, cat, pts, ptLabel(t)); }
+    if (t.asg) await creditAsg(t.asg, "t" + t.created, pct);
+  }
+  await wupdate("task/" + kid, { counted: true, pts });
+  S.tasks[kid] = { ...t, counted: true, pts };
 }
 
 /* ------------------------------------------------------------------ Bericht (PDF) */
@@ -651,9 +662,9 @@ async function continueTask(mode) {
     if (mode === "same") {
       const items = cur.items.map(i => ({ n: i.n, f: i.f, d: i.d, q: i.q, s: i.s, a: "", ok: null }));
       for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-      const task = { kid, kidName: kidName(kid), state: "OFFEN", lang: cur.lang, langName: cur.langName, dir: cur.dir, from: cur.from, to: cur.to, flt: cur.flt || { s: "", k: "", l: "" }, sel: selMode(cur), tips: !!cur.tips, rep: (cur.rep || 0) + 1, created: Date.now(), counted: false, items };
+      const task = { kid, kidName: kidName(kid), state: "OFFEN", lang: cur.lang, langName: cur.langName, dir: cur.dir, from: cur.from, to: cur.to, flt: cur.flt || { s: "", k: "", l: "" }, sel: selMode(cur), tips: !!cur.tips, rep: (cur.rep || 0) + 1, created: Date.now(), counted: false, src: cur.src || "self", ...(cur.asg ? { asg: cur.asg } : {}), items };
       await wset("task/" + kid, task); S.tasks[kid] = task;
-    } else if (!(await createTask(kid, cur.lang, cur.dir, cur.from, cur.to, cur.flt, cur.tips, selMode(cur)))) {
+    } else if (!(await createTask(kid, cur.lang, cur.dir, cur.from, cur.to, cur.flt, cur.tips, selMode(cur), { src: cur.src, asg: cur.asg }))) {
       toast("Neue Aufgabe konnte nicht gestartet werden – bitte den Administrator fragen.");
     }
   } catch (e) { toastErr(e, "Neustart fehlgeschlagen."); }
@@ -729,7 +740,7 @@ function viewSig() {
   const v = Object.keys(S.vocab).map(k => k + ":" + S.vocab[k].reduce((n, w) => n + Object.values(w.c || {}).reduce((q, a) => q + a[0] + a[1] + a[2], 0) + w.f.length + w.d.length + (w.h || "").length + tg(w).join("|").length, 0) + "/" + S.vocab[k].length).join(",");
   const t = Object.values(S.tasks).map(x => [x.kid, x.state, x.created, x.counted, x.items.length, x.ok]);
   const ex = Object.values(S.exams).map(x => [x.kid, x.state, x.created, x.logged, x.items.length, x.ok]);
-  return JSON.stringify([S.settings, S.kid, S.home, S.hlang, t, ex, S.mode, S.examLog.length, v, S.log.length, S.sync, S.canWrite, S.booted, S.settingsLoaded, S.vocabLoaded, S.taskLoaded, S.examLoaded, !!S.db]);
+  return JSON.stringify([S.settings, S.kid, S.home, S.hlang, t, ex, S.mode, S.examLog.length, v, S.log.length, S.sync, S.canWrite, S.booted, S.settingsLoaded, S.vocabLoaded, S.taskLoaded, S.examLoaded, !!S.db, asgSig(), ptsSig()]);
 }
 function softRender() {
   if (viewSig() === lastSig) return;          // nichts Sichtbares hat sich geändert
@@ -764,7 +775,7 @@ function renderAll() {
   if (!S.settingsLoaded || !S.vocabLoaded || !S.taskLoaded || !S.examLoaded) { root.append(h("div", { class: "empty" }, "Lade Daten …")); return; }
   if (!S.settings) { root.append(LOCAL ? localWelcome() : setupView()); return; }
   if (!S.canWrite) root.append(h("div", { class: "banner warn" }, "Nur Lesezugriff: Änderungen sind mit diesem Zugang nicht möglich."));
-  root.append(S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
+  root.append(S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "ziele" ? zieleView() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
   root.append(tabsNav());
   if (S.tab === "lernen") { const ab = actionBar(); if (ab) root.append(ab); }
   if (keep) { const n = document.querySelector('[data-key="' + keep.key + '"]'); if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
@@ -776,7 +787,7 @@ function header() {
     h("div", { class: "brand" }, h("h1", null, "Vokabeltrainer")),
     h("span", { class: "sync" }, h("span", { class: "dot " + st[0] }), st[1], LOCAL && window.VT_SEC && S.settings ? h("button", { class: "btn small sec", style: "margin-left:10px", onclick: () => window.VT_SEC.lock(), "aria-label": "Lern-Version sperren" }, "Sperren") : null));
   const frag = document.createDocumentFragment(); frag.append(top);
-  if (S.booted && S.db && S.settings && activeKids().length > 1 && (S.tab === "lernen" || S.tab === "vokabeln")) {
+  if (S.booted && S.db && S.settings && activeKids().length > 1 && (S.tab === "lernen" || S.tab === "ziele" || S.tab === "vokabeln")) {
     frag.append(h("div", { class: "row", style: "margin:0 0 14px", role: "group", "aria-label": "Wer lernt?" },
       activeKids().map(k => h("button", { class: "btn small " + (k.id === S.kid ? "" : "sec"), "aria-pressed": k.id === S.kid ? "true" : "false", onclick: () => setKid(k.id) }, k.name))));
   }
@@ -789,7 +800,7 @@ function noDb() {
     h("p", { class: "muted" }, "Öffne den Link in der Claude-App oder im Browser, nachdem du dich angemeldet hast."));
 }
 function tabsNav() {
-  const tabs = [["start", "Start"], ["lernen", "Lernen"], ["vokabeln", "Vokabeln"], ["protokoll", "Protokoll"], ["eltern", "Admin"]].filter(([k]) => !LOCAL || (k !== "vokabeln" && k !== "eltern"));
+  const tabs = [["start", "Start"], ["lernen", "Lernen"], ["ziele", "Ziele"], ["vokabeln", "Vokabeln"], ["protokoll", "Protokoll"], ["eltern", "Admin"]].filter(([k]) => !LOCAL || (k !== "vokabeln" && k !== "eltern"));
   return h("nav", { class: "tabs", "aria-label": "Bereiche" }, h("div", { class: "in", style: "grid-template-columns:repeat(" + tabs.length + ",1fr)" },
     tabs.map(([k, l]) => h("button", { "aria-label": k === "eltern" ? "Administrator" : null, "aria-current": S.tab === k ? "page" : null, class: k === "eltern" && parentOn() ? "unlocked" : null, onclick: () => { S.tab = k; renderAll(); window.scrollTo(0, 0); } }, l))));
 }
@@ -874,7 +885,7 @@ function startView() {
   const home = (S.home && act.some(k => k.id === S.home)) ? S.home : (act.length === 1 ? act[0].id : null);
   if (home && S.kid !== home) { S.kid = home; }
   const v = home ? personHome(home, act.length > 1) : tilesView();
-  return LOCAL ? h("div", { class: "stack" }, v, S.settings && S.log.length ? localFeedbackCard() : null, localImportCard()) : v;
+  return LOCAL ? h("div", { class: "stack" }, v, S.settings && (S.log.length || S.examLog.length || Object.keys(S.pts).length) ? localFeedbackCard() : null, localImportCard()) : v;
 }
 function tilesView() {
   const w = h("div", { class: "stack" });
@@ -901,6 +912,12 @@ function personHome(kid, canSwitch) {
     h("b", null, t.state === "OFFEN" ? "Deine Übung läuft" : "Letzte Übung: " + t.ok + " von " + t.items.length + " richtig"),
     h("div", { class: "muted" }, t.langName + ", " + selLabel(t)),
     h("button", { class: "btn", onclick: () => { S.mode = "lernen"; S.tab = "lernen"; renderAll(); window.scrollTo(0, 0); } }, t.state === "OFFEN" ? "Weitermachen" : "Ergebnis ansehen")));
+  { const pp = ptsOf(kid), lv = levelOf(pp.total), openA = asgOf(kid).filter(a => !a.doneAt);
+    w.append(h("div", { class: "card stack" },
+      h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
+        h("div", null, h("b", null, "Level " + lv.lv + " · " + lv.name), h("div", { class: "muted" }, pp.total + (pp.total === 1 ? " Punkt" : " Punkte"))),
+        h("button", { class: "btn small " + (openA.length ? "" : "sec"), onclick: () => { S.tab = "ziele"; renderAll(); window.scrollTo(0, 0); } }, openA.length ? openA.length + (openA.length === 1 ? " offener Auftrag" : " offene Aufträge") : "Ziele")),
+      pbar(Math.round(100 * lv.into / lv.step)))); }
   const langs = S.settings.langs.filter(l => (S.vocab[l.id] || []).length);
   if (!langs.length) { w.append(h("div", { class: "empty" }, LOCAL ? "Im Lern-Paket sind noch keine Vokabeln enthalten." : "Noch keine Vokabeln. Trage sie im Bereich „Vokabeln“ ein.")); return w; }
   if (!langs.some(l => l.id === S.hlang)) S.hlang = langs[0].id;
@@ -983,7 +1000,7 @@ function buildPackage(kidIds, withStats) {
       return [x.f, x.d, x.h || "", c, tg(x)];
     });
   });
-  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words };
+  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
 }
 const randPw = () => { const al = "abcdefghjkmnpqrstuvwxyz23456789", r = crypto.getRandomValues(new Uint32Array(10)); const t = Array.from(r, x => al[x % al.length]).join(""); return t.slice(0, 5) + "-" + t.slice(5); };
 async function packageDialog() {
@@ -1052,6 +1069,7 @@ async function importPackage(pkg, useStats) {
   for (const l of (cur.langs || []).filter(l => !langs.some(x => x.id === l.id))) await saveWords(l.id, []);
   await wset("app/settings", { v: 2, salt: cur.salt || uid(), pwHash: cur.pwHash || ("x" + uid() + uid()), langs, kids,
     cfgs: pkg.cfgs && typeof pkg.cfgs === "object" ? pkg.cfgs : (cur.cfgs || {}), cfg: pkg.cfg && typeof pkg.cfg === "object" ? pkg.cfg : (cur.cfg || { lang: langs[0].id, dir: "f2d", from: 1, to: 50 }) });
+  await mergeFromPackage(pkg, ids);
   return { words: total, added, kids: kids.length, langs: langs.length };
 }
 async function importPackageDialog() {
@@ -1092,7 +1110,10 @@ function buildFeedback() {
     if (rows.length) stats[l.id] = rows;
   });
   const log = S.log.filter(l => l.mode !== "pruefung" && ids.includes(l.kid)).slice(0, 200);
-  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log };
+  const asg = Object.values(S.asgs).filter(a => ids.includes(a.kid)).map(a => ({ id: a.id, kid: a.kid, prog: a.prog || {}, doneAt: a.doneAt || null }));
+  const pts = Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)]));
+  const exams = S.examLog.filter(l => ids.includes(l.kid)).slice(0, 10);
+  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log, asg, pts, exams };
 }
 async function saveFeedback() {
   const fb = buildFeedback(), names = fb.kids.map(k => k.name).join("_").replace(/[^\wäöüÄÖÜß-]+/g, "_").slice(0, 40);
@@ -1110,7 +1131,7 @@ async function copyFeedback() {
 }
 function localFeedbackCard() {
   return h("div", { class: "card stack" }, h("h3", null, "Lernstand an den Administrator schicken"),
-    h("p", { class: "muted", style: "margin:0" }, "Damit dein Lernstand und deine Übungen beim Administrator sichtbar werden, speicherst du eine Datei und schickst sie ihm."),
+    h("p", { class: "muted", style: "margin:0" }, "Damit dein Lernstand, deine Punkte und deine Aufträge beim Administrator sichtbar werden, speicherst du eine Datei und schickst sie ihm."),
     h("div", { class: "row" }, h("button", { class: "btn sec", onclick: saveFeedback }, "Datei speichern"), h("button", { class: "btn sec", onclick: copyFeedback }, "Als Text kopieren")));
 }
 function validFeedback(f) { return !!(f && f.kind === FB_KIND && f.v === 1 && Array.isArray(f.kids) && f.stats && typeof f.stats === "object" && Array.isArray(f.log)); }
@@ -1149,7 +1170,26 @@ async function applyFeedback(fb) {
     if (S.log.some(x => x.kid === doc.kid && x.ts === doc.ts)) continue;
     await wset(id, doc); logs++;
   }
-  return { upd, missing, logs, kids: kids.length };
+  let nPts = 0, nAsg = 0, nEx = 0;
+  for (const k of kids) {
+    if (fb.pts && typeof fb.pts === "object" && fb.pts[k.id]) { const m = mergePts(S.pts[k.id], fb.pts[k.id], k.id); await wset("pts/" + k.id, m); S.pts[k.id] = m; nPts++; }
+  }
+  for (const x of (Array.isArray(fb.asg) ? fb.asg : []).slice(0, 300)) {
+    const cur = x && S.asgs[x.id]; if (!cur || !known.has(cur.kid) || x.kid !== cur.kid) continue;
+    const inc = cleanAsg({ ...cur, prog: x.prog, doneAt: x.doneAt }); if (!inc) continue;
+    const m = mergeAsg(cur, inc); if (JSON.stringify(m) === JSON.stringify(cur)) continue;
+    await wset("asg/" + m.id, m); S.asgs[m.id] = m; nAsg++;
+  }
+  for (const e of (Array.isArray(fb.exams) ? fb.exams : []).slice(0, 30)) {
+    if (!e || !known.has(e.kid) || !langIds.has(e.lang) || !Number.isFinite(Number(e.ts))) continue;
+    if (S.examLog.some(x => x.kid === e.kid && x.ts === Number(e.ts))) continue;
+    const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), mode: "pruefung", lang: e.lang, langName: str(e.langName, 60), dir: e.dir === "d2f" ? "d2f" : "f2d",
+      flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 40) } : null, n: num(e.n), ok: num(e.ok), bad: num(e.bad), passed: !!e.passed,
+      note: Math.max(1, Math.min(6, num(e.note) || 6)), punkte: e.punkte != null ? num(e.punkte) : null, key: e.key === "op" ? "op" : "std", klasse: str(e.klasse, 10),
+      items: (Array.isArray(e.items) ? e.items : []).slice(0, EXAM_MAX).map(a => [str(a[0], 200), str(a[1], 200), str(a[2], 200), a[3] ? 1 : 0, 0]) };
+    await wset("exam_log/r" + doc.ts + "_" + doc.kid, doc); nEx++;
+  }
+  return { upd, missing, logs, kids: kids.length, pts: nPts, asg: nAsg, exams: nEx };
 }
 async function importFeedbackDialog() {
   await modal("Lernstand einlesen", (box, close) => {
@@ -1165,7 +1205,7 @@ async function importFeedbackDialog() {
       close(true);
       const ok = await confirmBox("Lernstand einlesen?", "Von: " + sm.kids.map(k => k.name).join(", ") + ". Stand vom " + fmtShort(Date.parse(fb.created) || Date.now()) + ". " + sm.words + " Vokabeln mit Lernstand, " + sm.logs + " Übungen fürs Protokoll. Bei jeder Vokabel gilt der Stand mit mehr Abfragen; nichts wird doppelt gezählt." + (sm.other ? " " + sm.other + " Person(en) aus der Datei gibt es hier nicht und werden übersprungen." : ""), "Einlesen");
       if (!ok) return;
-      try { const r = await applyFeedback(fb); toast("Eingelesen: " + r.upd + " Vokabelstände aktualisiert, " + r.logs + " Übungen im Protokoll." + (r.missing ? " " + r.missing + " Vokabeln nicht gefunden (inzwischen geändert)." : "")); renderAll(); }
+      try { const r = await applyFeedback(fb); toast("Eingelesen: " + r.upd + " Vokabelstände aktualisiert, " + r.logs + " Übungen im Protokoll" + (r.exams ? ", " + r.exams + (r.exams === 1 ? " Prüfung" : " Prüfungen") : "") + (r.pts ? ", Punkte von " + r.pts + (r.pts === 1 ? " Person" : " Personen") : "") + (r.asg ? ", Fortschritt bei " + r.asg + (r.asg === 1 ? " Auftrag" : " Aufträgen") : "") + "." + (r.missing ? " " + r.missing + " Vokabeln nicht gefunden (inzwischen geändert)." : "")); renderAll(); }
       catch (e) { toastErr(e, "Das Einlesen ist fehlgeschlagen."); }
     };
     box.append(h("p", { class: "muted", style: "margin:0" }, "Wähle die Lernstand-Datei (.json), die du aus der Lern-Version bekommen hast."), file, ta,
@@ -1222,14 +1262,14 @@ function modeSwitch() {
 }
 function lernenTab() {
   const f = document.createDocumentFragment();
-  if (LOCAL) { S.mode = "lernen"; f.append(lernenView()); } else f.append(modeSwitch(), S.mode === "pruefung" ? pruefungView() : lernenView());
+  f.append(modeSwitch(), S.mode === "pruefung" ? pruefungView() : lernenView());
   return f;
 }
 function lernenView() {
   const t = S.tasks[S.kid], wrap = h("div", { class: "lern" });
   if (!S.kid) { wrap.append(h("div", { class: "span banner warn" }, "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“.")); return wrap; }
   if (!t) {
-    wrap.append(h("div", { class: "span banner lock" }, "Noch keine Aufgabe" + (multiKids() ? " für " + kidName(S.kid) : "") + ". Der Administrator startet sie im Bereich „Admin“."));
+    wrap.append(h("div", { class: "span banner lock" }, "Noch keine Aufgabe" + (multiKids() ? " für " + kidName(S.kid) : "") + ". Starte eine Übung auf der Startseite oder aus einem Auftrag unter „Ziele“."));
     return wrap;
   }
   const open = t.state === "OFFEN";
@@ -1245,7 +1285,7 @@ function lernenView() {
   if (!open) {
     const pct = Math.round(100 * t.ok / Math.max(1, t.items.length));
     wrap.append(h("div", { class: "span card" },
-      h("div", { class: "score" }, h("span", { class: "big" }, t.ok + " / " + t.items.length), h("span", null, "richtig (" + pct + " %)")),
+      h("div", { class: "score" }, h("span", { class: "big" }, t.ok + " / " + t.items.length), h("span", null, "richtig (" + pct + " %)"), t.pts ? h("span", { class: "pill ok" }, "+" + t.pts + (t.pts === 1 ? " Punkt" : " Punkte")) : null),
       h("p", { class: "muted", style: "margin:10px 0 0" }, "Abgegeben am " + fmtDate(t.submitted) + ". Das PDF zu dieser Übung gibt es im Protokoll.")));
   }
   renderItems(wrap, t, open);
@@ -1257,7 +1297,7 @@ function pruefungView() {
   const t = S.exams[S.kid];
   wrap.append(examStatsCard());
   if (!t) {
-    wrap.append(h("div", { class: "span banner lock" }, "Keine Prüfung gestartet" + (multiKids() ? " für " + kidName(S.kid) : "") + ". Der Administrator startet sie im Bereich „Admin“."));
+    wrap.append(h("div", { class: "span banner lock" }, "Keine Prüfung gestartet" + (multiKids() ? " für " + kidName(S.kid) : "") + (LOCAL ? ". Prüfungen startest du unter „Ziele“ aus einem Auftrag." : ". Prüfungen startet der Administrator im Bereich „Admin“, oder du startest sie aus einem Auftrag unter „Ziele“.")));
     return wrap;
   }
   const open = t.state === "OFFEN";
@@ -1276,7 +1316,7 @@ function pruefungView() {
     h("span", { class: "chip" }, h("b", null, t.items.length + " Vokabeln"))));
   if (!open) {
     wrap.append(h("div", { class: "span card" },
-      h("div", { class: "score" }, h("span", { class: "big" }, t.ok + " / " + t.items.length), h("span", { class: "pill " + (t.passed ? "ok" : "bad") }, t.passed ? "bestanden" : "nicht bestanden")),
+      h("div", { class: "score" }, h("span", { class: "big" }, t.ok + " / " + t.items.length), h("span", { class: "pill " + (t.passed ? "ok" : "bad") }, t.passed ? "bestanden" : "nicht bestanden"), t.pts ? h("span", { class: "pill ok" }, "+" + t.pts + " Punkte") : null),
       (() => { const g = examGrade(t); return h("div", { class: "stack", style: "margin-top:10px" },
         h("div", { class: "row" }, h("span", { class: "big2" }, "Note " + g.note), h("span", { class: "muted" }, NOTENNAME[g.note] + (g.punkte != null ? " · " + g.punkte + " Punkte" : "") + " · " + Math.round(g.pct) + " %")),
         h("details", null, h("summary", { style: "cursor:pointer;font-weight:600" }, "Notenschlüssel anzeigen"), h("p", { class: "muted", style: "margin:8px 0 0" }, keyText(g)))); })(),
@@ -1841,7 +1881,7 @@ function elternView() {
         S.exams[k.id] ? h("button", { class: "btn sec small", disabled: !S.canWrite, onclick: () => discardExam(k.id) }, "Prüfung verwerfen") : null) : null));
   });
   c.append(h("p", { class: "muted", style: "margin:0" }, "Inaktive Personen erscheinen nicht in der Auswahl. Ihre Aufgabe und Statistik bleiben erhalten."));
-  w.append(c, kidsCard(), langCard());
+  w.append(c, asgAdminCard(), kidsCard(), langCard());
   w.append(h("div", { class: "card stack" }, h("h2", null, "Statistik"),
     h("p", { class: "muted", style: "margin:0" }, "Setzt die Zähler (abgefragt, richtig, falsch) zurück – für eine Person und eine Sprache oder für alle. Das Protokoll bleibt erhalten. Das Passwort wird dabei immer neu abgefragt."),
     h("button", { class: "btn sec", disabled: !S.canWrite, onclick: resetStatsDialog }, "Statistik zurücksetzen …")));
@@ -1928,6 +1968,8 @@ async function deleteKid(k) {
     await wupdate("app/settings", { kids: kidsOf().filter(x => x.id !== k.id) });
     await wdelete("task/" + k.id); delete S.tasks[k.id];
     await wdelete("exam/" + k.id); delete S.exams[k.id];
+    for (const a of asgOf(k.id)) { await wdelete("asg/" + a.id); delete S.asgs[a.id]; }
+    if (S.pts[k.id]) { await wdelete("pts/" + k.id); delete S.pts[k.id]; }
     pickKid(); renderAll();
   } catch (e) { toastErr(e); }
 }
@@ -2001,8 +2043,12 @@ async function finalizeExam(kid) {
   if (!t || t.state !== "ABGEGEBEN" || t.logged) return;
   await wset("exam_log/e" + t.created + "_" + kid, { ts: t.submitted, kid, kidName: kidName(kid), mode: "pruefung", lang: t.lang, langName: t.langName, dir: t.dir, flt: t.flt || null,
     n: t.items.length, ok: t.ok, bad: t.bad, passed: !!t.passed, ...(t.note != null ? { note: t.note, punkte: t.punkte != null ? t.punkte : null, key: t.key, klasse: t.klasse || "" } : (() => { const g = examGrade(t); return { note: g.note, punkte: g.punkte, key: g.key, klasse: g.klasse }; })()), items: t.items.map(i => [i.q, i.a || "", i.s, i.ok ? 1 : 0, 0]) });
-  await wupdate("exam/" + kid, { logged: true });
-  S.exams[kid] = { ...t, logged: true };
+  let pts = 0;
+  { const pct = 100 * t.ok / Math.max(1, t.items.length);
+    if (pct + 1e-9 >= PT.min) { pts = PT.exam; await awardPoints(kid, "e" + t.created, 3, pts, ptLabel(t)); }
+    if (t.asg) await creditAsg(t.asg, "e" + t.created, pct); }
+  await wupdate("exam/" + kid, { logged: true, pts });
+  S.exams[kid] = { ...t, logged: true, pts };
 }
 async function submitExam() {
   const kid = S.kid, cur = S.exams[kid];
@@ -2115,7 +2161,7 @@ async function startDialog(kid0) {
       if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Aufgabe verwerfen?", "Die bisherigen Antworten von " + kidName(kid) + " gehen verloren.", "Verwerfen & neu starten", true))) return;
       try {
         await wupdate("app/settings", { cfgs: { [kid]: { lang: sel.value, dir: dir.value, from: fIn, to: tIn, flt, tips: tipsOn, sel: selM } } });
-        if (await createTask(kid, sel.value, dir.value, fIn, tIn, flt, tipsOn, selM)) { close(true); toast("Aufgabe für " + kidName(kid) + " gestartet."); if (kid === S.kid) S.tab = "lernen"; renderAll(); }
+        if (await createTask(kid, sel.value, dir.value, fIn, tIn, flt, tipsOn, selM, { src: "admin" })) { close(true); toast("Aufgabe für " + kidName(kid) + " gestartet."); if (kid === S.kid) S.tab = "lernen"; renderAll(); }
       } catch (e) { toastErr(e); }
     };
     box.append(kids.length > 1 ? h("div", null, h("label", { class: "f" }, "Für"), ks) : null, h("div", null, h("label", { class: "f" }, "Mappe"), sel), h("div", null, h("label", { class: "f" }, "Richtung"), dir),
@@ -2126,7 +2172,7 @@ async function startDialog(kid0) {
 async function resetInput(kid) {
   const t = S.tasks[kid]; if (!t) return;
   if (t.state === "OFFEN" && !(await confirmBox("Eingabe zurücksetzen?", "Die bisherigen Antworten von " + kidName(kid) + " gehen verloren, es werden neue Vokabeln ausgewürfelt.", "Zurücksetzen", true))) return;
-  try { if (t.state === "ABGEGEBEN" && !t.counted) await finalizeCounts(kid); if (await createTask(kid, t.lang, t.dir, t.from, t.to, t.flt, t.tips, selMode(t))) { if (kid === S.kid) S.tab = "lernen"; toast("Neue Vokabeln für " + kidName(kid) + " ausgewürfelt."); renderAll(); } } catch (e) { toastErr(e); }
+  try { if (t.state === "ABGEGEBEN" && !t.counted) await finalizeCounts(kid); if (await createTask(kid, t.lang, t.dir, t.from, t.to, t.flt, t.tips, selMode(t), { src: t.src, asg: t.asg })) { if (kid === S.kid) S.tab = "lernen"; toast("Neue Vokabeln für " + kidName(kid) + " ausgewürfelt."); renderAll(); } } catch (e) { toastErr(e); }
 }
 async function changePw() {
   await modal("Passwort ändern", (box, close) => {
@@ -2141,11 +2187,253 @@ async function changePw() {
     box.append(a, b, h("div", { class: "row" }, h("button", { class: "btn parent", onclick: go }, "Speichern"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
   });
 }
+/* ------------------------------------------------------------------ Punkte, Aufträge und Belohnungen */
+/* Punkte ab 90 % richtig: eigene Übung 1, Übung aus Aufgabe/Auftrag vom Administrator 5, Prüfung 15 (Wiederholungen derselben Vokabeln zählen nicht). */
+const PT = { min: 90, own: 1, asg: 5, exam: 15 }, LEVEL_STEP = 50;
+const LEVEL_NAMES = ["Starter", "Entdecker", "Wortsammler", "Vokabelprofi", "Sprachkünstler", "Meister", "Legende"];
+const PCAT = { 1: "Eigene Übungen", 2: "Aufgaben vom Admin", 3: "Prüfungen" };
+const levelOf = total => { const lv = 1 + Math.floor(total / LEVEL_STEP); return { lv, name: LEVEL_NAMES[Math.min(lv - 1, LEVEL_NAMES.length - 1)], into: total % LEVEL_STEP, step: LEVEL_STEP }; };
+const fmtDay = ts => new Date(ts).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+const ptLabel = t => String(t.langName || "") + (fltLabel(t.flt) ? " · " + fltLabel(t.flt) : "");
+const asgSig = () => Object.values(S.asgs).map(a => [a.id, a.doneAt, a.redeemed, a.title, a.reward, a.due, JSON.stringify(a.prog)]);
+const ptsSig = () => Object.values(S.pts).map(p => [p.kid, (p.ev || []).length, JSON.stringify(p.old)]);
+
+/* Punktekonto je Person: Liste einzelner Ereignisse [id, Zeit, Kategorie 1-3, Punkte, Text]; old = Summe älterer, zusammengefasster Ereignisse je Kategorie */
+function normPts(p, kid) {
+  const ev = (p && Array.isArray(p.ev) ? p.ev : []).filter(e => Array.isArray(e) && typeof e[0] === "string" && [1, 2, 3].includes(e[2]) && Number.isFinite(+e[1]) && Number.isFinite(+e[3]))
+    .map(e => [String(e[0]).slice(0, 60), +e[1], e[2], Math.max(0, Math.min(100, Math.round(+e[3]))), String(e[4] || "").slice(0, 60)]);
+  const o = p && Array.isArray(p.old) ? p.old : [];
+  return { kid, ev, old: [0, 1, 2].map(i => Math.max(0, Math.round(+o[i] || 0))) };
+}
+function prunePts(p) {
+  if (p.ev.length <= 800) return p;
+  p.ev.sort((a, b) => a[1] - b[1]);
+  p.ev.splice(0, p.ev.length - 600).forEach(e => { p.old[e[2] - 1] += e[3]; });
+  return p;
+}
+function mergePts(a, b, kid) {
+  const x = normPts(a, kid), y = normPts(b, kid), m = new Map();
+  [...x.ev, ...y.ev].forEach(e => { if (!m.has(e[0])) m.set(e[0], e); });
+  return prunePts({ kid, ev: [...m.values()].sort((p, q) => p[1] - q[1]), old: [0, 1, 2].map(i => Math.max(x.old[i], y.old[i])) });
+}
+function ptsOf(kid) {
+  const p = normPts(S.pts[kid], kid), by = { 1: p.old[0], 2: p.old[1], 3: p.old[2] };
+  p.ev.forEach(e => { by[e[2]] += e[3]; });
+  return { total: by[1] + by[2] + by[3], by, ev: p.ev.slice().sort((a, b) => b[1] - a[1]) };
+}
+async function awardPoints(kid, id, cat, pts, label) {
+  if (!pts) return false;
+  const cur = normPts(S.pts[kid], kid);
+  if (cur.ev.some(e => e[0] === id)) return false;                    /* gleiche Übung nie zweimal werten */
+  cur.ev.push([id, Date.now(), cat, pts, String(label || "").slice(0, 60)]);
+  prunePts(cur); await wset("pts/" + kid, cur); S.pts[kid] = cur; return true;
+}
+
+/* Aufträge: reqs = Positionen (Übung/Prüfung, Mappe, Tags, Anzahl, Mindest-%), prog = erledigte Läufe je Position (Lauf-IDs, damit Zusammenführen nichts doppelt zählt) */
+const asgOf = kid => Object.values(S.asgs).filter(a => a.kid === kid).sort((x, y) => (x.doneAt ? 1 : 0) - (y.doneAt ? 1 : 0) || y.created - x.created);
+const reqDone = (a, r) => Math.min(r.count, ((a.prog && a.prog[r.id]) || []).length);
+const asgComplete = a => a.reqs.length > 0 && a.reqs.every(r => reqDone(a, r) >= r.count);
+const reqLabel = r => (r.type === "pruef" ? "Prüfung" : "Übung") + " · " + (r.langName || "") + " · " + (fltLabel(r.flt) || "alle Vokabeln");
+function cleanAsg(a) {
+  if (!a || typeof a !== "object") return null;
+  const str = (x, n) => String(x == null ? "" : x).slice(0, n), pos = x => (Number.isFinite(+x) && +x > 0) ? Math.round(+x) : null;
+  const reqs = (Array.isArray(a.reqs) ? a.reqs : []).slice(0, 12).filter(r => r && typeof r === "object").map(r => ({ id: str(r.id, 20), type: r.type === "pruef" ? "pruef" : "ueb", lang: str(r.lang, 40), langName: str(r.langName, 60),
+    dir: r.dir === "d2f" ? "d2f" : "f2d", flt: { s: str(r.flt && r.flt.s, 40), k: str(r.flt && r.flt.k, 40), l: str(r.flt && r.flt.l, 40) },
+    count: Math.max(1, Math.min(50, Math.round(+r.count || 1))), minPct: Math.max(0, Math.min(100, Math.round(+r.minPct || 0))), tips: !!r.tips })).filter(r => r.id && r.lang);
+  const prog = {}; if (a.prog && typeof a.prog === "object") reqs.forEach(r => { const l = a.prog[r.id]; if (Array.isArray(l)) prog[r.id] = [...new Set(l.map(x => str(x, 60)))].slice(-200); });
+  const id = str(a.id, 40), kid = str(a.kid, 40); if (!id || !kid || !reqs.length) return null;
+  return { id, kid, kidName: str(a.kidName, 60), title: str(a.title, 80) || "Auftrag", created: pos(a.created) || Date.now(), due: pos(a.due), reward: str(a.reward, 200), reqs, prog, doneAt: pos(a.doneAt), redeemed: pos(a.redeemed) };
+}
+function mergeAsg(cur, inc) {
+  const m = clone(inc), prog = {};
+  m.reqs.forEach(r => { prog[r.id] = [...new Set([...(((cur.prog || {})[r.id]) || []), ...(((inc.prog || {})[r.id]) || [])])].slice(-200); });
+  m.prog = prog; m.doneAt = cur.doneAt || inc.doneAt || null; if (!m.doneAt && asgComplete(m)) m.doneAt = Date.now();
+  m.redeemed = cur.redeemed || inc.redeemed || null;
+  return m;
+}
+async function mergeFromPackage(pkg, ids) {
+  const inc = (Array.isArray(pkg.asg) ? pkg.asg.slice(0, 300) : []).map(cleanAsg).filter(a => a && ids.includes(a.kid)), keep = new Set(inc.map(a => a.id));
+  for (const a of Object.values(S.asgs)) if (ids.includes(a.kid) && !keep.has(a.id)) { await wdelete("asg/" + a.id); delete S.asgs[a.id]; }   /* Der Administrator hat ihn gelöscht */
+  for (const a of inc) { const cur = S.asgs[a.id], m = cur ? mergeAsg(cur, a) : (asgComplete(a) && !a.doneAt ? { ...a, doneAt: Date.now() } : a); await wset("asg/" + m.id, m); S.asgs[m.id] = m; }
+  if (pkg.pts && typeof pkg.pts === "object") for (const id of ids) if (pkg.pts[id]) { const m = mergePts(S.pts[id], pkg.pts[id], id); await wset("pts/" + id, m); S.pts[id] = m; }
+}
+async function creditAsg(ref, runId, pct) {
+  const a = S.asgs[ref.id]; if (!a) return;
+  const rq = a.reqs.find(r => r.id === ref.req); if (!rq) return;
+  if (pct + 1e-9 < (rq.minPct || 0)) return;
+  const n = clone(a); n.prog = n.prog || {};
+  const list = n.prog[rq.id] || [];
+  if (!list.includes(runId)) list.push(runId);
+  n.prog[rq.id] = list.slice(-200);
+  if (!n.doneAt && asgComplete(n)) n.doneAt = Date.now();
+  await wset("asg/" + a.id, n); S.asgs[a.id] = n;
+}
+async function startAssigned(aid, rid) {
+  if (S.busy) return;
+  const a = S.asgs[aid], rq = a && a.reqs.find(r => r.id === rid); if (!rq) return;
+  const kid = a.kid, ref = { id: aid, req: rid };
+  S.busy = true;
+  try {
+    if (rq.type === "ueb") {
+      const run = S.tasks[kid];
+      if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Übung ersetzen?", "Die bisherigen Antworten in der laufenden Übung gehen verloren.", "Neue Übung starten", true))) { S.busy = false; renderAll(); return; }
+      if (await createTask(kid, rq.lang, rq.dir, 1, MAXV, rq.flt, !!rq.tips, "tags", { src: "asg", asg: ref })) { S.mode = "lernen"; S.tab = "lernen"; toast("Los geht’s!"); }
+    } else {
+      const run = S.exams[kid];
+      if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung ersetzen?", "Die bisherigen Antworten in der laufenden Prüfung gehen verloren.", "Neue Prüfung starten", true))) { S.busy = false; renderAll(); return; }
+      const items = examWords(rq.lang, rq.flt).map(({ w, n }) => ({ n, f: w.f, d: w.d, q: rq.dir === "d2f" ? w.d : w.f, s: rq.dir === "d2f" ? w.f : w.d, a: "", ok: null }));
+      if (!items.length) { toast("Dazu gibt es keine Vokabeln mehr. Bitte den Administrator fragen."); S.busy = false; renderAll(); return; }
+      if (items.length > EXAM_MAX) { toast("Die Prüfung hat zu viele Vokabeln. Bitte den Administrator fragen."); S.busy = false; renderAll(); return; }
+      for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: rq.lang, langName: rq.langName || ((S.settings.langs.find(l => l.id === rq.lang) || {}).name || ""), dir: rq.dir, flt: rq.flt, created: Date.now(), logged: false, asg: ref, items };
+      await wset("exam/" + kid, exam); S.exams[kid] = exam; S.tab = "lernen"; S.mode = "pruefung"; toast("Prüfung gestartet. Viel Erfolg!");
+    }
+  } catch (e) { toastErr(e, "Der Start hat nicht geklappt."); }
+  S.busy = false; renderAll(); window.scrollTo(0, 0);
+}
+
+/* ---- Bereich „Ziele“ (Person): Level, Punkte, Aufträge ---- */
+function asgCard(a) {
+  const done = !!a.doneAt, late = !done && a.due && Date.now() > a.due;
+  const c = h("div", { class: "card stack" }, h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("b", null, a.title),
+    done ? h("span", { class: "pill ok" }, "geschafft ✓") : late ? h("span", { class: "pill bad" }, "überfällig") : a.due ? h("span", { class: "pill n" }, "bis " + fmtDay(a.due)) : null));
+  if (a.reward) c.append(h("div", { class: "row" }, h("span", { class: "pill gift" }, "Belohnung: " + a.reward), done ? h("span", { class: "pill " + (a.redeemed ? "ok" : "mid") }, a.redeemed ? "eingelöst" : "wartet auf Übergabe") : null));
+  a.reqs.forEach(r => {
+    const n = reqDone(a, r), ok = n >= r.count;
+    c.append(h("div", { class: "stack", style: "padding-top:10px;border-top:1px solid var(--line);gap:8px" },
+      h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("span", null, reqLabel(r)), h("b", null, n + " / " + r.count)),
+      pbar(Math.round(100 * n / r.count)),
+      h("div", { class: "muted" }, dirLabel(r.dir) + (r.minPct ? " · mindestens " + r.minPct + " % richtig" : "")),
+      ok ? null : h("button", { class: "btn small", disabled: S.busy || !S.canWrite, onclick: () => startAssigned(a.id, r.id) }, r.type === "pruef" ? "Prüfung starten" : "Übung starten")));
+  });
+  if (done) c.append(h("div", { class: "banner open" }, a.redeemed ? "Belohnung eingelöst." : "Geschafft!" + (a.reward ? " Zeig das dem Administrator, dann bekommst du: " + a.reward + "." : "")));
+  return c;
+}
+function zieleView() {
+  const w = h("div", { class: "stack" });
+  if (!S.kid) { w.append(h("div", { class: "banner warn" }, "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“.")); return w; }
+  const kid = S.kid, p = ptsOf(kid), lv = levelOf(p.total);
+  w.append(h("div", { class: "card stack" },
+    h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
+      h("div", null, h("h2", null, "Level " + lv.lv + " · " + lv.name), h("div", { class: "muted" }, (multiKids() ? kidName(kid) + ": " : "") + "Punktekonto")),
+      h("span", { style: "font-size:40px;font-weight:800;line-height:1", "aria-label": p.total + " Punkte" }, p.total)),
+    pbar(Math.round(100 * lv.into / lv.step)),
+    h("div", { class: "muted" }, "Noch " + (lv.step - lv.into) + " Punkte bis Level " + (lv.lv + 1) + "."),
+    h("div", { class: "row" }, [1, 2, 3].map(c => h("span", { class: "pill n" }, PCAT[c] + ": " + p.by[c]))),
+    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es ab " + PT.min + " % richtig: " + PT.own + " Punkt für eine eigene Übung, " + PT.asg + " Punkte für eine Übung aus einer Aufgabe oder einem Auftrag vom Administrator, " + PT.exam + " Punkte für eine Prüfung. Dieselben Vokabeln noch einmal zu wiederholen bringt keine Punkte.")));
+  w.append(h("h3", null, "Aufträge"));
+  const list = asgOf(kid);
+  if (!list.length) w.append(h("div", { class: "empty" }, "Noch keine Aufträge. Der Administrator kann dir Tages- oder Wochenaufträge geben."));
+  list.forEach(a => w.append(asgCard(a)));
+  if (p.ev.length) w.append(h("details", { class: "card" }, h("summary", { style: "cursor:pointer;font-weight:600" }, "Letzte Punkte"),
+    h("div", { class: "stack", style: "margin-top:10px" }, p.ev.slice(0, 20).map(e => h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap;border-top:1px solid var(--line);padding-top:8px" },
+      h("div", null, h("b", null, "+" + e[3]), " " + PCAT[e[2]], h("div", { class: "muted" }, fmtShort(e[1]) + (e[4] ? " · " + e[4] : ""))))))));
+  return w;
+}
+
+/* ---- Administrator: Aufträge anlegen, Belohnung als eingelöst markieren ---- */
+async function asgDialog(kid0) {
+  const langs = S.settings.langs; if (!langs.length) { toast("Bitte zuerst eine Sprache anlegen."); return; }
+  const kids = activeKids(); if (!kids.length) { toast("Keine aktive Person."); return; }
+  const first = kid0 || S.kid || kids[0].id;
+  await modal("Neuer Auftrag", (box, close) => {
+    const chk = on => h("input", { type: "checkbox", checked: on, style: "width:22px;height:22px;min-height:0;flex:none" });
+    const kidRows = kids.map(k => ({ k, cb: chk(k.id === first) }));
+    const title = h("input", { type: "text", placeholder: "Titel, z. B. Wochenauftrag Latein", maxlength: 80, "aria-label": "Titel" });
+    const due = h("input", { type: "date", "aria-label": "Fällig bis (optional)" });
+    const reward = h("input", { type: "text", placeholder: "Belohnung (optional), z. B. 5-Euro-Gutschein", maxlength: 200, "aria-label": "Belohnung" });
+    const tipsCb = chk(false), msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
+    const reqBox = h("div", { class: "stack" }), rows = [];
+    const addRow = () => {
+      const cfg = cfgOf(first);
+      const type = h("select", { "aria-label": "Art" }, h("option", { value: "ueb" }, "Übung (je " + QCOUNT + " Vokabeln)"), h("option", { value: "pruef" }, "Prüfung (alle passenden Vokabeln)"));
+      const sel = h("select", { "aria-label": "Mappe" }, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
+      const dir = h("select", { "aria-label": "Richtung" }, h("option", { value: "f2d", selected: cfg.dir !== "d2f" }, "Fremdsprache → Deutsch"), h("option", { value: "d2f", selected: cfg.dir === "d2f" }, "Deutsch → Fremdsprache"));
+      const fs = fltSelects(sel.value, {});
+      const count = h("input", { type: "number", min: 1, max: 50, value: 1, inputmode: "numeric", "aria-label": "Anzahl" });
+      const minPct = h("input", { type: "number", min: 0, max: 100, value: 0, inputmode: "numeric", "aria-label": "Mindestens Prozent richtig" });
+      const info = h("div", { class: "muted" });
+      const upd = () => { const n = examWords(sel.value, fs.get()).length; info.textContent = type.value === "pruef" ? (fltHas(fs.get()) ? "Prüfung mit " + n + " Vokabeln." + (n > EXAM_MAX ? " Das sind zu viele (max. " + EXAM_MAX + ")." : "") : "Für eine Prüfung bitte mindestens ein Tag wählen.") : n + " passende Vokabeln, je Übung werden " + Math.min(QCOUNT, n) + " abgefragt."; };
+      type.addEventListener("change", () => { minPct.value = type.value === "pruef" ? 80 : 0; upd(); });
+      sel.addEventListener("change", () => { fs.refill(sel.value); upd(); });
+      [dir, ...fs.els].forEach(x => x.addEventListener("input", upd)); upd();
+      const wrap = h("div", { class: "stack", style: "padding-top:10px;border-top:1px solid var(--line)" });
+      const row = { type, sel, dir, fs, count, minPct, wrap };
+      const rm = h("button", { class: "btn sec small", type: "button", onclick: () => { if (rows.length < 2) { toast("Ein Auftrag braucht mindestens eine Position."); return; } rows.splice(rows.indexOf(row), 1); wrap.remove(); } }, "Position entfernen");
+      wrap.append(h("b", null, "Position"), type, sel, dir, h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e))),
+        h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Anzahl"), count), h("div", { class: "grow" }, h("label", { class: "f" }, "Mindestens % richtig (0 = egal)"), minPct)), info, rm);
+      rows.push(row); reqBox.append(wrap);
+    };
+    addRow();
+    const go = async btn => {
+      const sel = kidRows.filter(r => r.cb.checked); if (!sel.length) { msg.textContent = "Bitte mindestens eine Person wählen."; return; }
+      const reqs = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i], f = r.fs.get(), n = examWords(r.sel.value, f).length, cnt = Math.round(+r.count.value || 0), mp = Math.round(+r.minPct.value || 0), nm = "Position " + (i + 1) + ": ";
+        if (cnt < 1 || cnt > 50) { msg.textContent = nm + "Die Anzahl muss zwischen 1 und 50 liegen."; return; }
+        if (mp < 0 || mp > 100) { msg.textContent = nm + "Die Prozentzahl muss zwischen 0 und 100 liegen."; return; }
+        if (!n) { msg.textContent = nm + "Dazu gibt es keine Vokabeln."; return; }
+        if (r.type.value === "pruef" && !fltHas(f)) { msg.textContent = nm + "Für eine Prüfung bitte mindestens ein Tag wählen."; return; }
+        if (r.type.value === "pruef" && n > EXAM_MAX) { msg.textContent = nm + "Zu viele Vokabeln für eine Prüfung (max. " + EXAM_MAX + ")."; return; }
+        reqs.push({ id: "r" + (i + 1), type: r.type.value, lang: r.sel.value, langName: (langs.find(l => l.id === r.sel.value) || {}).name || "", dir: r.dir.value, flt: { s: f.s || "", k: f.k || "", l: f.l || "" }, count: cnt, minPct: mp, tips: r.type.value === "ueb" && tipsCb.checked });
+      }
+      msg.textContent = ""; btn.disabled = true;
+      try {
+        const base = Date.now();
+        for (const [i, r] of sel.entries()) {
+          const id = "a" + (base + i).toString(36) + Math.random().toString(36).slice(2, 4);
+          const a = { id, kid: r.k.id, kidName: r.k.name, title: title.value.trim() || "Auftrag", created: base + i, due: due.value ? new Date(due.value + "T23:59:00").getTime() : null, reward: reward.value.trim(), reqs: clone(reqs), prog: {}, doneAt: null, redeemed: null };
+          await wset("asg/" + id, a); S.asgs[id] = a;
+        }
+        close(true); toast(sel.length === 1 ? "Auftrag für " + sel[0].k.name + " erstellt." : "Auftrag für " + sel.length + " Personen erstellt."); renderAll();
+      } catch (e) { btn.disabled = false; toastErr(e); }
+    };
+    box.append(h("p", { class: "muted", style: "margin:0" }, "Ein Auftrag besteht aus einer oder mehreren Positionen, z. B. 5 Übungen zu Lektion 11 und 1 Prüfung dazu mit mindestens 80 %. Die Person startet sie selbst im Bereich „Ziele“."),
+      kids.length > 1 ? h("div", { class: "stack" }, h("label", { class: "f" }, "Für"), ...kidRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, r.k.name)))) : null,
+      title, h("div", null, h("label", { class: "f" }, "Fällig bis (optional)"), due), reqBox,
+      h("button", { class: "btn sec", type: "button", onclick: addRow }, "+ Weitere Position"),
+      h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, tipsCb, h("span", null, "Tipps bei den Übungen erlauben")),
+      h("div", null, h("label", { class: "f" }, "Belohnung (optional)"), reward), msg,
+      h("div", { class: "row" }, h("button", { class: "btn parent", onclick: e => go(e.currentTarget) }, "Auftrag erstellen"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
+  }, { sticky: true });
+}
+async function redeemAsg(a, on) {
+  try { const n = clone(a); n.redeemed = on ? Date.now() : null; await wset("asg/" + a.id, n); S.asgs[a.id] = n; renderAll(); } catch (e) { toastErr(e); }
+}
+async function deleteAsg(a) {
+  if (!(await confirmBox("Auftrag löschen?", "„" + a.title + "“ von " + kidName(a.kid) + " wird gelöscht. Bereits gesammelte Punkte bleiben erhalten.", "Löschen", true))) return;
+  try { await wdelete("asg/" + a.id); delete S.asgs[a.id]; renderAll(); } catch (e) { toastErr(e); }
+}
+function asgAdminRow(a) {
+  const done = !!a.doneAt, late = !done && a.due && Date.now() > a.due;
+  return h("div", { class: "stack", style: "border:1px solid var(--line);border-radius:12px;padding:10px;gap:6px" },
+    h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("b", null, a.title),
+      done ? h("span", { class: "pill ok" }, "geschafft") : late ? h("span", { class: "pill bad" }, "überfällig") : h("span", { class: "pill n" }, a.due ? "bis " + fmtDay(a.due) : "offen")),
+    ...a.reqs.map(r => h("div", { class: "muted" }, reqLabel(r) + (r.minPct ? " (ab " + r.minPct + " %)" : "") + ": " + reqDone(a, r) + " von " + r.count)),
+    a.reward ? h("div", { class: "row" }, h("span", { class: "pill gift" }, "Belohnung: " + a.reward), done ? h("span", { class: "pill " + (a.redeemed ? "ok" : "mid") }, a.redeemed ? "eingelöst" : "noch zu übergeben") : null) : null,
+    h("div", { class: "row" },
+      done && a.reward && !a.redeemed ? h("button", { class: "btn parent small", disabled: !S.canWrite, onclick: () => redeemAsg(a, true) }, "Belohnung übergeben") : null,
+      done && a.reward && a.redeemed ? h("button", { class: "btn sec small", disabled: !S.canWrite, onclick: () => redeemAsg(a, false) }, "Wieder auf offen") : null,
+      h("button", { class: "btn sec small", disabled: !S.canWrite, onclick: () => deleteAsg(a) }, "Löschen")));
+}
+function asgAdminCard() {
+  const c = h("div", { class: "card stack" }, h("h2", null, "Aufträge, Belohnungen & Punkte"),
+    h("p", { class: "muted", style: "margin:0" }, "Tages- oder Wochenaufträge mit mehreren Lektionen und Prüfungen, je mit Anzahl und optional einer Belohnung. Die Person startet die Übungen selbst im Bereich „Ziele“ und sammelt dort Punkte."),
+    h("button", { class: "btn parent", disabled: !S.canWrite, onclick: () => asgDialog() }, "Neuen Auftrag erstellen …"));
+  kidsOf().forEach(k => {
+    const list = asgOf(k.id), p = ptsOf(k.id), lv = levelOf(p.total);
+    c.append(h("div", { class: "stack", style: "padding-top:12px;border-top:1px solid var(--line)" },
+      h("div", null, h("b", null, k.name), h("div", { class: "muted" }, p.total + " Punkte · Level " + lv.lv + " (" + lv.name + ") · Eigene " + p.by[1] + ", Aufgaben " + p.by[2] + ", Prüfungen " + p.by[3])),
+      ...(list.length ? list.map(asgAdminRow) : [h("div", { class: "muted" }, "Keine Aufträge.")])));
+  });
+  return c;
+}
+
 async function exportBackup() {
   if (!S.dl) { toast("Speichern von Dateien ist hier nicht verfügbar."); return; }
   const data = { app: "vokabeltrainer", version: 2, exported: new Date().toISOString(), kids: kidsOf(),
     languages: S.settings.langs.map(l => ({ name: l.name, words: (S.vocab[l.id] || []).map(x => ({ f: x.f, d: x.d, h: x.h || "", c: normC(x.c), t: tg(x) })) })),
-    log: S.log };
+    log: S.log, asg: Object.values(S.asgs), pts: S.pts };
   try { await S.dl.save({ filename: "Vokabeltrainer_Sicherung_" + new Date().toISOString().slice(0, 10) + ".json", data: JSON.stringify(data, null, 1) }); toast("Sicherung gespeichert."); }
   catch (e) { if (!e || e.code !== "declined") toast("Sicherung fehlgeschlagen."); }
 }
@@ -2160,6 +2448,8 @@ async function importBackup() {
       const total = data.languages.reduce((s, l) => s + l.words.length, 0);
       if (!(await confirmBox("Sicherung einspielen?", "Alle aktuellen Sprachen, Personen, Aufgaben und Vokabeln (" + Object.values(S.vocab).reduce((s, a) => s + a.length, 0) + ") werden durch die Sicherung (" + data.languages.length + " Sprachen, " + kids.length + " Personen, " + total + " Vokabeln) ersetzt.", "Einspielen", true))) return;
       for (const k of kidsOf()) { await wdelete("exam/" + k.id); delete S.exams[k.id]; await wdelete("task/" + k.id); delete S.tasks[k.id]; }
+      for (const a of Object.values(S.asgs)) await wdelete("asg/" + a.id); S.asgs = {};
+      for (const id of Object.keys(S.pts)) await wdelete("pts/" + id); S.pts = {};
       for (const l of S.settings.langs) await saveWords(l.id, []);
       const langs = [];
       for (const l of data.languages) {
@@ -2169,6 +2459,13 @@ async function importBackup() {
           t: Array.isArray(x.t) ? x.t.map(String) : ["", "", ""] })));
       }
       await wupdate("app/settings", { langs, kids, cfg: { lang: langs[0] ? langs[0].id : "", dir: "f2d", from: 1, to: 50 } });
+      { const kidSet = new Set(kids.map(k => k.id)), byName = new Map(langs.map(l => [l.name, l.id]));
+        for (const raw of (Array.isArray(data.asg) ? data.asg : []).slice(0, 300)) {
+          const a = cleanAsg(raw); if (!a || !kidSet.has(a.kid)) continue;
+          a.reqs.forEach(r => { r.lang = byName.get(r.langName) || r.lang; });
+          await wset("asg/" + a.id, a); S.asgs[a.id] = a;
+        }
+        if (data.pts && typeof data.pts === "object") for (const id of Object.keys(data.pts)) if (kidSet.has(id)) { const p = normPts(data.pts[id], id); await wset("pts/" + id, p); S.pts[id] = p; } }
       toast("Sicherung eingespielt.");
     } catch (e) { toast("Einspielen fehlgeschlagen: " + (e.message || e)); }
   });
@@ -2221,6 +2518,8 @@ function wire(db) {
     S.examLoaded = true; softRender();
   }, bad);
   db.collection("exam_log").orderBy("ts", "desc").limit(300).onSnapshot(qs => { S.examLog = qs.docs.map(d => d.data()); softRender(); }, bad);
+  db.collection("asg").onSnapshot(qs => { const m = {}; qs.docs.forEach(d => { const a = clone(d.data()); if (a && a.id && Array.isArray(a.reqs)) m[a.id] = a; }); S.asgs = m; softRender(); }, bad);
+  db.collection("pts").onSnapshot(qs => { const m = {}; qs.docs.forEach(d => { m[d.id] = clone(d.data()); }); S.pts = m; softRender(); }, bad);
   db.collection("vocab").onSnapshot(qs => {
     const blocks = {}, vocab = {};
     qs.docs.forEach(d => { blocks[d.id] = d.data(); });
