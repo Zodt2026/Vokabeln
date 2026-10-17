@@ -178,6 +178,7 @@ table.proto td,table.proto th{white-space:nowrap;padding-right:14px}
 .card.lang{cursor:pointer}
 .card.lang.sel{border-color:var(--blue);box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 30%,transparent)}
 .pill.n{background:var(--line);color:var(--ink)}
+.cd{height:12px;border-radius:99px;background:var(--line);overflow:hidden}.cd i{display:block;height:100%;background:var(--blue);border-radius:99px;transition:width .2s linear}.cd.low i{background:var(--bad)}
 .pill.gift{background:#fff1b8;color:#5a4400;white-space:normal}
 @media (max-width:480px){nav.tabs button{font-size:12.5px}}
 table.v.sm tbody tr{cursor:pointer}
@@ -335,7 +336,7 @@ const uid = () => "l" + Date.now().toString(36) + Math.random().toString(36).sli
 const BLOCK = 100, MAXV = 1500, QCOUNT = 30;
 const fmtShort = ts => new Date(ts).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 const fmtDate = ts => new Date(ts).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const dirLabel = d => d === "d2f" ? "Deutsch → Fremdsprache" : "Fremdsprache → Deutsch";
+const dirLabel = d => d === "d2f" ? "Deutsch → Fremdsprache" : d === "mix" ? "Gemischt (beide Richtungen)" : "Fremdsprache → Deutsch";
 
 /* ------------------------------------------------------------------ Zustand */
 const LOCAL = !!window.VT_LOCAL;   /* Lern-Version: läuft ohne Claude, Daten nur auf diesem Gerät, nur Lernen */
@@ -500,7 +501,7 @@ function drawItems(lang, dir, from, to, kid, flt) {
   for (let i = sel.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [sel[i], sel[j]] = [sel[j], sel[i]]; }
   return { count: cand.length, items: sel.map(n => {
     const w = words[n - 1];
-    return { n, f: w.f, d: w.d, q: dir === "d2f" ? w.d : w.f, s: dir === "d2f" ? w.f : w.d, a: "", ok: null };
+    return { n, f: w.f, d: w.d, ...qa(w, dir), a: "", ok: null };
   }) };
 }
 async function createTask(kid, lang, dir, from, to, flt, tips, sel, extra) {
@@ -762,6 +763,7 @@ document.addEventListener("focusout", () => { setTimeout(syncKb, 120); });
 if (window.visualViewport) window.visualViewport.addEventListener("resize", syncKb);
 
 function renderAll() {
+  stopExamTimer();
   if (LOCAL && (S.tab === "vokabeln" || S.tab === "eltern")) S.tab = "start";
   pendingRender = false; lastSig = viewSig();
   const root = $("#app");
@@ -778,6 +780,7 @@ function renderAll() {
   root.append(S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "ziele" ? zieleView() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
   root.append(tabsNav());
   if (S.tab === "lernen") { const ab = actionBar(); if (ab) root.append(ab); }
+  syncExamTimer();
   if (keep) { const n = document.querySelector('[data-key="' + keep.key + '"]'); if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
   window.scrollTo(0, scroll);
 }
@@ -938,7 +941,7 @@ function personHome(kid, canSwitch) {
   const dir = S.hdir[kid] || cfg.dir || "f2d";
   w.append(h("h3", null, lang.name + ": was möchtest du üben?"));
   w.append(h("div", { class: "seg", role: "group", "aria-label": "Richtung", style: "margin:0" },
-    [["f2d", "Fremdsprache → Deutsch"], ["d2f", "Deutsch → Fremdsprache"]].map(([v, l]) => h("button", { type: "button", "aria-pressed": dir === v ? "true" : "false", onclick: () => { S.hdir[kid] = v; renderAll(); } }, l))));
+    [["f2d", "Fremdsprache → Deutsch"], ["d2f", "Deutsch → Fremdsprache"], ["mix", "Gemischt"]].map(([v, l]) => h("button", { type: "button", "aria-pressed": dir === v ? "true" : "false", onclick: () => { S.hdir[kid] = v; renderAll(); } }, l))));
   w.append(h("button", { class: "btn sec", disabled: !S.canWrite, onclick: () => startSelf(kid, lang.id, null) }, "Gemischt üben (alle Vokabeln)"));
   cats.forEach(c => {
     const label = tagText(c.t) || "Ohne Tags", started = c.tried > 0, ex = examDone(lang.id, kid, c.t);
@@ -1163,7 +1166,7 @@ async function applyFeedback(fb) {
   const langIds = new Set(S.settings.langs.map(l => l.id)), str = (x, n) => String(x == null ? "" : x).slice(0, n), num = x => Math.max(0, Math.round(Number(x) || 0));
   for (const e of fb.log.slice(0, 200)) {
     if (!e || !known.has(e.kid) || !langIds.has(e.lang) || !Number.isFinite(Number(e.ts))) continue;
-    const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), lang: e.lang, langName: str(e.langName, 60), dir: e.dir === "d2f" ? "d2f" : "f2d", from: num(e.from), to: num(e.to), n: num(e.n), ok: num(e.ok), bad: num(e.bad), rep: num(e.rep),
+    const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), lang: e.lang, langName: str(e.langName, 60), dir: cleanDir(e.dir), from: num(e.from), to: num(e.to), n: num(e.n), ok: num(e.ok), bad: num(e.bad), rep: num(e.rep),
       flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 40) } : null, sel: e.sel === "tags" ? "tags" : "range",
       items: (Array.isArray(e.items) ? e.items : []).slice(0, 80).map(a => [str(a[0], 200), str(a[1], 200), str(a[2], 200), a[3] ? 1 : 0, num(a[4])]) };
     const id = "log/r" + doc.ts + "_" + doc.kid;
@@ -1183,7 +1186,7 @@ async function applyFeedback(fb) {
   for (const e of (Array.isArray(fb.exams) ? fb.exams : []).slice(0, 30)) {
     if (!e || !known.has(e.kid) || !langIds.has(e.lang) || !Number.isFinite(Number(e.ts))) continue;
     if (S.examLog.some(x => x.kid === e.kid && x.ts === Number(e.ts))) continue;
-    const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), mode: "pruefung", lang: e.lang, langName: str(e.langName, 60), dir: e.dir === "d2f" ? "d2f" : "f2d",
+    const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), mode: "pruefung", lang: e.lang, langName: str(e.langName, 60), dir: cleanDir(e.dir),
       flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 40) } : null, n: num(e.n), ok: num(e.ok), bad: num(e.bad), passed: !!e.passed,
       note: Math.max(1, Math.min(6, num(e.note) || 6)), punkte: e.punkte != null ? num(e.punkte) : null, key: e.key === "op" ? "op" : "std", klasse: str(e.klasse, 10),
       items: (Array.isArray(e.items) ? e.items : []).slice(0, EXAM_MAX).map(a => [str(a[0], 200), str(a[1], 200), str(a[2], 200), a[3] ? 1 : 0, 0]) };
@@ -1306,14 +1309,14 @@ function pruefungView() {
     finalizeExam(k).catch(() => { S.finalFail = t.created; }).finally(() => { S.finalizing = false; });
   }
   wrap.append(h("div", { class: "span banner " + (open ? "open" : t.passed ? "open" : "lock") },
-    open ? "Prüfung läuft: Antworten eintragen, danach abgeben. Bestanden ist sie nur mit 100 % richtigen Antworten. Es gibt keine Tipps und keine Wiederholung. Groß- und Kleinschreibung wird geprüft. Zusätzlich gibt es eine Note."
+    open ? "Prüfung läuft: Du siehst immer nur eine Vokabel und kannst nicht zurück." + (t.secs ? " Pro Vokabel hast du " + t.secs + " Sekunden, danach wird die Eingabe gesperrt und es geht automatisch weiter." : "") + " Bestanden ist sie nur mit 100 % richtigen Antworten. Es gibt keine Tipps und keine Wiederholung. Groß- und Kleinschreibung wird geprüft. Zusätzlich gibt es eine Note."
       : t.passed ? "Bestanden! Alle Antworten sind richtig." : "Nicht bestanden. Bestanden ist eine Prüfung nur mit 100 % richtigen Antworten."));
   wrap.append(h("div", { class: "span meta" },
     h("span", { class: "chip" }, h("b", null, "Prüfung")),
     h("span", { class: "chip" }, "Mappe: ", h("b", null, t.langName)),
     h("span", { class: "chip" }, h("b", null, dirLabel(t.dir))),
     fltLabel(t.flt) ? h("span", { class: "chip" }, h("b", null, fltLabel(t.flt))) : null,
-    h("span", { class: "chip" }, h("b", null, t.items.length + " Vokabeln"))));
+    h("span", { class: "chip" }, h("b", null, t.items.length + " Vokabeln")), t.secs ? h("span", { class: "chip" }, h("b", null, t.secs + " s pro Vokabel")) : null));
   if (!open) {
     wrap.append(h("div", { class: "span card" },
       h("div", { class: "score" }, h("span", { class: "big" }, t.ok + " / " + t.items.length), h("span", { class: "pill " + (t.passed ? "ok" : "bad") }, t.passed ? "bestanden" : "nicht bestanden"), t.pts ? h("span", { class: "pill ok" }, "+" + t.pts + " Punkte") : null),
@@ -1322,7 +1325,7 @@ function pruefungView() {
         h("details", null, h("summary", { style: "cursor:pointer;font-weight:600" }, "Notenschlüssel anzeigen"), h("p", { class: "muted", style: "margin:8px 0 0" }, keyText(g)))); })(),
       h("p", { class: "muted", style: "margin:10px 0 0" }, "Abgegeben am " + fmtDate(t.submitted) + ". Das PDF zu dieser Prüfung gibt es im Protokoll.")));
   }
-  renderItems(wrap, t, open);
+  if (open) renderExamCard(wrap, t); else renderItems(wrap, t, open);
   return wrap;
 }
 function examStatsCard() {
@@ -1397,6 +1400,7 @@ function updateProgress() {
 function actionBar() {
   const t = curT(); if (!t) return null;
   const exam = S.mode === "pruefung";
+  if (exam && t.state === "OFFEN") return null;      /* Prüfung läuft: Weiter/Abgeben steht auf der Karte */
   const open = t.state === "OFFEN", n = answeredCount(), tot = t.items.length, canRep = (t.rep || 0) < 1;
   let kids;
   if (open) kids = [h("div", { class: "row", style: "flex:1;flex-wrap:nowrap" }, h("span", { id: "proglabel", class: "muted", style: "white-space:nowrap" }, n + " von " + tot), h("div", { class: "bar" }, h("i", { id: "prog", style: "width:" + (100 * n / tot) + "%" }))),
@@ -2050,12 +2054,12 @@ async function finalizeExam(kid) {
   await wupdate("exam/" + kid, { logged: true, pts });
   S.exams[kid] = { ...t, logged: true, pts };
 }
-async function submitExam() {
+async function submitExam(auto) {
   const kid = S.kid, cur = S.exams[kid];
   if (S.busy || !cur || cur.state !== "OFFEN") return;
   const empty = cur.items.filter(i => !norm(i.a)).length;
-  const go = await confirmBox("Prüfung jetzt abgeben?", (empty ? empty + " Feld(er) sind noch leer und zählen als falsch. " : "") + "Bestanden ist die Prüfung nur mit 100 % richtigen Antworten. Danach kann nichts mehr geändert werden.", "Prüfung abgeben");
-  if (!go) return;
+  const go = auto === true ? true : await confirmBox("Prüfung jetzt abgeben?", (empty ? empty + " Feld(er) sind noch leer und zählen als falsch. " : "") + "Bestanden ist die Prüfung nur mit 100 % richtigen Antworten. Danach kann nichts mehr geändert werden.", "Prüfung abgeben");
+  if (!go || !S.exams[kid] || S.exams[kid].state !== "OFFEN") return;
   S.busy = true; renderAll();
   try {
     const t = clone(S.exams[kid]);
@@ -2078,8 +2082,9 @@ async function startExamDialog(kid0) {
   await modal("Prüfung starten", (box, close) => {
     const ks = h("select", null, kids.map(k => h("option", { value: k.id, selected: k.id === kid0 }, k.name)));
     const sel = h("select", null, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
-    const dir = h("select", null, h("option", { value: "f2d", selected: cfg.dir !== "d2f" }, "Fremdsprache → Deutsch"), h("option", { value: "d2f", selected: cfg.dir === "d2f" }, "Deutsch → Fremdsprache"));
+    const dir = dirSelect(cfg.dir);
     const fs = fltSelects(sel.value, {});
+    const secs = secSelect(10);
     const info = h("div", { class: "muted" });
     const st = () => { const f = fs.get(); return { f, has: !!(f.s || f.k || f.l), n: examWords(sel.value, f).length }; };
     const upd = () => { const { has, n } = st(); info.textContent = !has ? "Bitte mindestens ein Tag (Schulart, Klasse oder Lektion) wählen." : n + " Vokabeln werden abgefragt – alle passenden, ohne Begrenzung auf 30." + (n > EXAM_MAX ? " Das sind zu viele (max. " + EXAM_MAX + "), bitte die Tags enger wählen." : ""); };
@@ -2092,9 +2097,9 @@ async function startExamDialog(kid0) {
       if (n > EXAM_MAX) { toast("Zu viele Vokabeln (max. " + EXAM_MAX + "). Bitte die Tags enger wählen."); return; }
       const run = S.exams[kid];
       if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung verwerfen?", "Die bisherigen Antworten von " + kidName(kid) + " gehen verloren.", "Verwerfen & neu starten", true))) return;
-      const items = examWords(sel.value, f).map(({ w, n: nr }) => ({ n: nr, f: w.f, d: w.d, q: dir.value === "d2f" ? w.d : w.f, s: dir.value === "d2f" ? w.f : w.d, a: "", ok: null }));
+      const items = examWords(sel.value, f).map(({ w, n: nr }) => ({ n: nr, f: w.f, d: w.d, ...qa(w, dir.value), a: "", ok: null }));
       for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: sel.value, langName: (langs.find(l => l.id === sel.value) || {}).name || "", dir: dir.value, flt: f, created: Date.now(), logged: false, items };
+      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: sel.value, langName: (langs.find(l => l.id === sel.value) || {}).name || "", dir: dir.value, flt: f, created: Date.now(), logged: false, secs: cleanSecs(secs.value), pos: 0, pstart: null, items };
       try {
         await wset("exam/" + kid, exam); S.exams[kid] = exam; close(true); toast("Prüfung für " + kidName(kid) + " gestartet.");
         if (kid === S.kid) { S.tab = "lernen"; S.mode = "pruefung"; } renderAll();
@@ -2102,7 +2107,8 @@ async function startExamDialog(kid0) {
     };
     box.append(kids.length > 1 ? h("div", null, h("label", { class: "f" }, "Für"), ks) : null, h("div", null, h("label", { class: "f" }, "Mappe"), sel), h("div", null, h("label", { class: "f" }, "Richtung"), dir),
       h("div", null, h("label", { class: "f" }, "Tags der Prüfung (mindestens eines)"), h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e)))), info,
-      h("p", { class: "muted", style: "margin:0" }, "Keine Tipps, keine Wiederholung. Bestanden nur mit 100 % richtigen Antworten."),
+      h("div", null, h("label", { class: "f" }, "Zeit pro Vokabel (5 bis 20 Sekunden)"), secs),
+      h("p", { class: "muted", style: "margin:0" }, "Die Person sieht immer nur eine Vokabel. Ist die Zeit um, wird die Eingabe gesperrt und es geht automatisch weiter. Keine Tipps, keine Wiederholung. Bestanden nur mit 100 % richtigen Antworten."),
       h("div", { class: "row" }, h("button", { class: "btn parent", onclick: go }, "Prüfung starten"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
   });
 }
@@ -2120,7 +2126,7 @@ async function startDialog(kid0) {
   await modal("Neue Aufgabe", (box, close) => {
     const ks = h("select", null, kids.map(k => h("option", { value: k.id, selected: k.id === kid0 }, k.name)));
     const sel = h("select", null, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
-    const dir = h("select", null, h("option", { value: "f2d", selected: cfg.dir !== "d2f" }, "Fremdsprache → Deutsch"), h("option", { value: "d2f", selected: cfg.dir === "d2f" }, "Deutsch → Fremdsprache"));
+    const dir = dirSelect(cfg.dir);
     const from = h("input", { type: "number", min: 1, max: MAXV, value: cfg.from || 1, inputmode: "numeric" });
     const to = h("input", { type: "number", min: 1, max: MAXV, value: cfg.to || 50, inputmode: "numeric" });
     const fs = fltSelects(sel.value, cfg.flt || {});
@@ -2238,7 +2244,7 @@ function cleanAsg(a) {
   if (!a || typeof a !== "object") return null;
   const str = (x, n) => String(x == null ? "" : x).slice(0, n), pos = x => (Number.isFinite(+x) && +x > 0) ? Math.round(+x) : null;
   const reqs = (Array.isArray(a.reqs) ? a.reqs : []).slice(0, 12).filter(r => r && typeof r === "object").map(r => ({ id: str(r.id, 20), type: r.type === "pruef" ? "pruef" : "ueb", lang: str(r.lang, 40), langName: str(r.langName, 60),
-    dir: r.dir === "d2f" ? "d2f" : "f2d", flt: { s: str(r.flt && r.flt.s, 40), k: str(r.flt && r.flt.k, 40), l: str(r.flt && r.flt.l, 40) },
+    dir: cleanDir(r.dir), secs: cleanSecs(r.secs), flt: { s: str(r.flt && r.flt.s, 40), k: str(r.flt && r.flt.k, 40), l: str(r.flt && r.flt.l, 40) },
     count: Math.max(1, Math.min(50, Math.round(+r.count || 1))), minPct: Math.max(0, Math.min(100, Math.round(+r.minPct || 0))), tips: !!r.tips })).filter(r => r.id && r.lang);
   const prog = {}; if (a.prog && typeof a.prog === "object") reqs.forEach(r => { const l = a.prog[r.id]; if (Array.isArray(l)) prog[r.id] = [...new Set(l.map(x => str(x, 60)))].slice(-200); });
   const id = str(a.id, 40), kid = str(a.kid, 40); if (!id || !kid || !reqs.length) return null;
@@ -2281,11 +2287,11 @@ async function startAssigned(aid, rid) {
     } else {
       const run = S.exams[kid];
       if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung ersetzen?", "Die bisherigen Antworten in der laufenden Prüfung gehen verloren.", "Neue Prüfung starten", true))) { S.busy = false; renderAll(); return; }
-      const items = examWords(rq.lang, rq.flt).map(({ w, n }) => ({ n, f: w.f, d: w.d, q: rq.dir === "d2f" ? w.d : w.f, s: rq.dir === "d2f" ? w.f : w.d, a: "", ok: null }));
+      const items = examWords(rq.lang, rq.flt).map(({ w, n }) => ({ n, f: w.f, d: w.d, ...qa(w, rq.dir), a: "", ok: null }));
       if (!items.length) { toast("Dazu gibt es keine Vokabeln mehr. Bitte den Administrator fragen."); S.busy = false; renderAll(); return; }
       if (items.length > EXAM_MAX) { toast("Die Prüfung hat zu viele Vokabeln. Bitte den Administrator fragen."); S.busy = false; renderAll(); return; }
       for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: rq.lang, langName: rq.langName || ((S.settings.langs.find(l => l.id === rq.lang) || {}).name || ""), dir: rq.dir, flt: rq.flt, created: Date.now(), logged: false, asg: ref, items };
+      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: rq.lang, langName: rq.langName || ((S.settings.langs.find(l => l.id === rq.lang) || {}).name || ""), dir: rq.dir, flt: rq.flt, created: Date.now(), logged: false, asg: ref, secs: cleanSecs(rq.secs), pos: 0, pstart: null, items };
       await wset("exam/" + kid, exam); S.exams[kid] = exam; S.tab = "lernen"; S.mode = "pruefung"; toast("Prüfung gestartet. Viel Erfolg!");
     }
   } catch (e) { toastErr(e, "Der Start hat nicht geklappt."); }
@@ -2303,7 +2309,7 @@ function asgCard(a) {
     c.append(h("div", { class: "stack", style: "padding-top:10px;border-top:1px solid var(--line);gap:8px" },
       h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("span", null, reqLabel(r)), h("b", null, n + " / " + r.count)),
       pbar(Math.round(100 * n / r.count)),
-      h("div", { class: "muted" }, dirLabel(r.dir) + (r.minPct ? " · mindestens " + r.minPct + " % richtig" : "")),
+      h("div", { class: "muted" }, dirLabel(r.dir) + (r.type === "pruef" && r.secs ? " · " + r.secs + " s pro Vokabel" : "") + (r.minPct ? " · mindestens " + r.minPct + " % richtig" : "")),
       ok ? null : h("button", { class: "btn small", disabled: S.busy || !S.canWrite, onclick: () => startAssigned(a.id, r.id) }, r.type === "pruef" ? "Prüfung starten" : "Übung starten")));
   });
   if (done) c.append(h("div", { class: "banner open" }, a.redeemed ? "Belohnung eingelöst." : "Geschafft!" + (a.reward ? " Zeig das dem Administrator, dann bekommst du: " + a.reward + "." : "")));
@@ -2348,20 +2354,21 @@ async function asgDialog(kid0) {
       const cfg = cfgOf(first);
       const type = h("select", { "aria-label": "Art" }, h("option", { value: "ueb" }, "Übung (je " + QCOUNT + " Vokabeln)"), h("option", { value: "pruef" }, "Prüfung (alle passenden Vokabeln)"));
       const sel = h("select", { "aria-label": "Mappe" }, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
-      const dir = h("select", { "aria-label": "Richtung" }, h("option", { value: "f2d", selected: cfg.dir !== "d2f" }, "Fremdsprache → Deutsch"), h("option", { value: "d2f", selected: cfg.dir === "d2f" }, "Deutsch → Fremdsprache"));
+      const dir = dirSelect(cfg.dir, "Richtung");
       const fs = fltSelects(sel.value, {});
+      const secs = secSelect(10), secsBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Zeit pro Vokabel (5 bis 20 Sekunden)"), secs);
       const count = h("input", { type: "number", min: 1, max: 50, value: 1, inputmode: "numeric", "aria-label": "Anzahl" });
       const minPct = h("input", { type: "number", min: 0, max: 100, value: 0, inputmode: "numeric", "aria-label": "Mindestens Prozent richtig" });
       const info = h("div", { class: "muted" });
       const upd = () => { const n = examWords(sel.value, fs.get()).length; info.textContent = type.value === "pruef" ? (fltHas(fs.get()) ? "Prüfung mit " + n + " Vokabeln." + (n > EXAM_MAX ? " Das sind zu viele (max. " + EXAM_MAX + ")." : "") : "Für eine Prüfung bitte mindestens ein Tag wählen.") : n + " passende Vokabeln, je Übung werden " + Math.min(QCOUNT, n) + " abgefragt."; };
-      type.addEventListener("change", () => { minPct.value = type.value === "pruef" ? 80 : 0; upd(); });
+      type.addEventListener("change", () => { minPct.value = type.value === "pruef" ? 80 : 0; secsBox.classList.toggle("hide", type.value !== "pruef"); upd(); });
       sel.addEventListener("change", () => { fs.refill(sel.value); upd(); });
       [dir, ...fs.els].forEach(x => x.addEventListener("input", upd)); upd();
       const wrap = h("div", { class: "stack", style: "padding-top:10px;border-top:1px solid var(--line)" });
-      const row = { type, sel, dir, fs, count, minPct, wrap };
+      const row = { type, sel, dir, fs, count, minPct, secs, wrap };
       const rm = h("button", { class: "btn sec small", type: "button", onclick: () => { if (rows.length < 2) { toast("Ein Auftrag braucht mindestens eine Position."); return; } rows.splice(rows.indexOf(row), 1); wrap.remove(); } }, "Position entfernen");
-      wrap.append(h("b", null, "Position"), type, sel, dir, h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e))),
-        h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Anzahl"), count), h("div", { class: "grow" }, h("label", { class: "f" }, "Mindestens % richtig (0 = egal)"), minPct)), info, rm);
+      wrap.append(h("b", null, "Position"), h("label", { class: "f" }, "Art der Position: Übung oder Prüfung"), type, sel, dir, h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e))),
+        h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Anzahl"), count), h("div", { class: "grow" }, h("label", { class: "f" }, "Mindestens % richtig (0 = egal)"), minPct)), secsBox, info, rm);
       rows.push(row); reqBox.append(wrap);
     };
     addRow();
@@ -2375,7 +2382,7 @@ async function asgDialog(kid0) {
         if (!n) { msg.textContent = nm + "Dazu gibt es keine Vokabeln."; return; }
         if (r.type.value === "pruef" && !fltHas(f)) { msg.textContent = nm + "Für eine Prüfung bitte mindestens ein Tag wählen."; return; }
         if (r.type.value === "pruef" && n > EXAM_MAX) { msg.textContent = nm + "Zu viele Vokabeln für eine Prüfung (max. " + EXAM_MAX + ")."; return; }
-        reqs.push({ id: "r" + (i + 1), type: r.type.value, lang: r.sel.value, langName: (langs.find(l => l.id === r.sel.value) || {}).name || "", dir: r.dir.value, flt: { s: f.s || "", k: f.k || "", l: f.l || "" }, count: cnt, minPct: mp, tips: r.type.value === "ueb" && tipsCb.checked });
+        reqs.push({ id: "r" + (i + 1), type: r.type.value, lang: r.sel.value, langName: (langs.find(l => l.id === r.sel.value) || {}).name || "", dir: r.dir.value, flt: { s: f.s || "", k: f.k || "", l: f.l || "" }, count: cnt, minPct: mp, secs: r.type.value === "pruef" ? cleanSecs(r.secs.value) : 0, tips: r.type.value === "ueb" && tipsCb.checked });
       }
       msg.textContent = ""; btn.disabled = true;
       try {
@@ -2389,7 +2396,7 @@ async function asgDialog(kid0) {
       } catch (e) { btn.disabled = false; toastErr(e); }
     };
     box.append(h("p", { class: "muted", style: "margin:0" }, "Ein Auftrag besteht aus einer oder mehreren Positionen, z. B. 5 Übungen zu Lektion 11 und 1 Prüfung dazu mit mindestens 80 %. Die Person startet sie selbst im Bereich „Ziele“."),
-      kids.length > 1 ? h("div", { class: "stack" }, h("label", { class: "f" }, "Für"), ...kidRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, r.k.name)))) : null,
+      kids.length > 1 ? h("div", { class: "stack" }, h("label", { class: "f" }, "Für wen zählt der Auftrag? (mehrere möglich)"), ...kidRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, r.k.name)))) : null,
       title, h("div", null, h("label", { class: "f" }, "Fällig bis (optional)"), due), reqBox,
       h("button", { class: "btn sec", type: "button", onclick: addRow }, "+ Weitere Position"),
       h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, tipsCb, h("span", null, "Tipps bei den Übungen erlauben")),
@@ -2409,7 +2416,7 @@ function asgAdminRow(a) {
   return h("div", { class: "stack", style: "border:1px solid var(--line);border-radius:12px;padding:10px;gap:6px" },
     h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("b", null, a.title),
       done ? h("span", { class: "pill ok" }, "geschafft") : late ? h("span", { class: "pill bad" }, "überfällig") : h("span", { class: "pill n" }, a.due ? "bis " + fmtDay(a.due) : "offen")),
-    ...a.reqs.map(r => h("div", { class: "muted" }, reqLabel(r) + (r.minPct ? " (ab " + r.minPct + " %)" : "") + ": " + reqDone(a, r) + " von " + r.count)),
+    ...a.reqs.map(r => h("div", { class: "muted" }, reqLabel(r) + " (" + dirLabel(r.dir).replace("Gemischt (beide Richtungen)", "gemischt") + (r.type === "pruef" && r.secs ? ", " + r.secs + " s" : "") + (r.minPct ? ", ab " + r.minPct + " %" : "") + ")" + ": " + reqDone(a, r) + " von " + r.count)),
     a.reward ? h("div", { class: "row" }, h("span", { class: "pill gift" }, "Belohnung: " + a.reward), done ? h("span", { class: "pill " + (a.redeemed ? "ok" : "mid") }, a.redeemed ? "eingelöst" : "noch zu übergeben") : null) : null,
     h("div", { class: "row" },
       done && a.reward && !a.redeemed ? h("button", { class: "btn parent small", disabled: !S.canWrite, onclick: () => redeemAsg(a, true) }, "Belohnung übergeben") : null,
@@ -2427,6 +2434,67 @@ function asgAdminCard() {
       ...(list.length ? list.map(asgAdminRow) : [h("div", { class: "muted" }, "Keine Aufträge.")])));
   });
   return c;
+}
+
+/* ------------------------------------------------------------------ Richtung „gemischt“, Zeit pro Vokabel, Prüfung Vokabel für Vokabel */
+const cleanDir = d => (d === "d2f" || d === "mix") ? d : "f2d";
+const cleanSecs = x => { x = Math.round(+x || 0); return x >= 5 && x <= 20 ? x : 0; };
+const qa = (w, dir) => { const d = dir === "mix" ? (Math.random() < 0.5 ? "f2d" : "d2f") : dir; return { q: d === "d2f" ? w.d : w.f, s: d === "d2f" ? w.f : w.d }; };
+const dirSelect = (init, label) => { const e = h("select", label ? { "aria-label": label } : null, h("option", { value: "f2d" }, "Fremdsprache → Deutsch"), h("option", { value: "d2f" }, "Deutsch → Fremdsprache"), h("option", { value: "mix" }, "Gemischt (beide Richtungen)")); e.value = cleanDir(init); return e; };
+const secSelect = init => { const e = h("select", { "aria-label": "Zeit pro Vokabel" }, h("option", { value: "0" }, "Kein Zeitlimit"), ...Array.from({ length: 16 }, (_, k) => h("option", { value: String(k + 5) }, (k + 5) + " Sekunden"))); e.value = String(cleanSecs(init)); return e; };
+
+let examTimer = null, examBusy = false;
+function stopExamTimer() { clearInterval(examTimer); examTimer = null; }
+function syncExamTimer() {
+  stopExamTimer(); const t = S.exams[S.kid];
+  if (S.tab === "lernen" && S.mode === "pruefung" && t && t.state === "OFFEN" && t.secs) { examTimer = setInterval(tickExam, 200); tickExam(); }
+}
+function tickExam() {
+  const t = S.exams[S.kid];
+  if (!t || t.state !== "OFFEN" || S.mode !== "pruefung" || S.tab !== "lernen" || !t.secs || !t.pstart) return;
+  const left = t.secs * 1000 - (Date.now() - t.pstart), bar = document.querySelector("#xbar i"), sec = document.querySelector("#xsec");
+  if (bar) { bar.style.width = Math.max(0, Math.min(100, 100 * left / (t.secs * 1000))) + "%"; bar.parentNode.classList.toggle("low", left < 3000); }
+  if (sec) sec.textContent = "Noch " + Math.max(0, Math.ceil(left / 1000)) + " Sekunden";
+  if (left <= 0) examAdvance(true);
+}
+/* Zeigt immer nur die aktuelle Vokabel; die Karte wird an Ort und Stelle aktualisiert, damit die Tastatur offen bleibt */
+function paintExam(root) {
+  const t = S.exams[S.kid]; if (!t || t.state !== "OFFEN") return;
+  const n = t.items.length, i = Math.min(Math.max(+t.pos || 0, 0), n - 1), it = t.items[i], last = i === n - 1;
+  const $x = id => (root || document).querySelector("#" + id), set = (id, v) => { const e = $x(id); if (e) e.textContent = v; };
+  set("xnr", String(i + 1)); set("xq", it.q); set("xcount", "Vokabel " + (i + 1) + " von " + n); set("xnext", last ? "Prüfung abgeben" : "Weiter");
+  const inp = $x("xin");
+  if (inp) { inp.value = it.a || ""; inp.disabled = !S.canWrite; inp.dataset.key = "a" + i; inp.setAttribute("enterkeyhint", last ? "done" : "next"); inp.setAttribute("aria-label", "Antwort zu Vokabel " + (i + 1)); }
+}
+function renderExamCard(wrap, t) {
+  if (t.secs && !t.pstart && S.canWrite) { t.pstart = Date.now(); wupdate("exam/" + t.kid, { pos: +t.pos || 0, pstart: t.pstart }).catch(() => {}); }
+  const inp = h("input", { type: "text", id: "xin", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false" });
+  inp.addEventListener("input", () => { const x = S.exams[S.kid]; if (!x || x.state !== "OFFEN") return; x.items[Math.min(+x.pos || 0, x.items.length - 1)].a = inp.value; scheduleAnswerSave(); });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); examAdvance(false); } });
+  inp.addEventListener("focus", () => keepVisible(inp));
+  const card = h("div", { class: "span card q", id: "xcard" },
+    h("div", { class: "nr", id: "xnr" }, ""), h("div", { class: "txt", id: "xq" }, ""),
+    h("div", { class: "ans ansrow" }, inp),
+    t.secs ? h("div", { class: "stack", style: "gap:6px;grid-column:1/-1" }, h("div", { class: "cd", id: "xbar", role: "progressbar", "aria-label": "Verbleibende Zeit" }, h("i", { style: "width:100%" })), h("div", { class: "muted", id: "xsec" }, "")) : null,
+    h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap;grid-column:1/-1" }, h("span", { class: "muted", id: "xcount" }, ""),
+      h("button", { class: "btn", id: "xnext", disabled: S.busy || !S.canWrite, onclick: () => examAdvance(false) }, "Weiter")));
+  wrap.append(card); paintExam(card);
+}
+async function examAdvance(auto) {
+  const kid = S.kid, t = S.exams[kid];
+  if (examBusy || !t || t.state !== "OFFEN") return;
+  const n = t.items.length, i = Math.min(Math.max(+t.pos || 0, 0), n - 1), inp = document.getElementById("xin");
+  if (inp) { t.items[i].a = inp.value; if (auto) inp.disabled = true; }       /* Zeit abgelaufen: Eingabe sperren */
+  if (i >= n - 1) { await submitExam(!!auto); return; }
+  examBusy = true; const was = { pos: t.pos, pstart: t.pstart };
+  try {
+    clearTimeout(ansTimer); ansDirty = false;
+    t.pos = i + 1; t.pstart = Date.now();
+    paintExam(); if (inp && document.activeElement !== inp && !auto) inp.focus();
+    await wupdate("exam/" + kid, { items: t.items, pos: t.pos, pstart: t.pstart });
+  } catch (e) { t.pos = was.pos; t.pstart = was.pstart; paintExam(); toastErr(e, "Das Weiterschalten konnte nicht gespeichert werden."); }
+  examBusy = false;
+  const nx = document.getElementById("xin"); if (nx && !nx.disabled && !auto) nx.focus();
 }
 
 async function exportBackup() {
@@ -2511,7 +2579,8 @@ function wire(db) {
       const same = cur && nt.created === cur.created;
       const localAnswers = same && cur.state === "OFFEN" && cur.items.some(i => norm(i.a));
       const staleOpen = same && cur.state === "ABGEGEBEN" && nt.state === "OFFEN";
-      if (same && (staleOpen || (nt.state === "OFFEN" && cur.state === "OFFEN" && (typing || localAnswers)))) return;
+      const behind = same && cur.state === "OFFEN" && nt.state === "OFFEN" && (+nt.pos || 0) < (+cur.pos || 0);
+      if (same && (staleOpen || behind || (nt.state === "OFFEN" && cur.state === "OFFEN" && (typing || localAnswers)))) return;
       S.exams[kid] = nt;
     });
     qs.docChanges().forEach(c => { if (c.type === "removed") delete S.exams[c.doc.id]; });
