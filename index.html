@@ -179,6 +179,19 @@ table.proto td,table.proto th{white-space:nowrap;padding-right:14px}
 .card.lang.sel{border-color:var(--blue);box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 30%,transparent)}
 .pill.n{background:var(--line);color:var(--ink)}
 .cd{height:12px;border-radius:99px;background:var(--line);overflow:hidden}.cd i{display:block;height:100%;background:var(--blue);border-radius:99px;transition:width .2s linear}.cd.low i{background:var(--bad)}
+.card.chapr{outline:2px solid var(--ok);outline-offset:-2px}.card.chapm{outline:2px solid #d9a400;outline-offset:-2px}
+tr.chapr td{background:var(--ok-bg)}tr.chapm td{background:var(--warn-bg)}
+.celeb{position:fixed;inset:0;z-index:90;display:grid;place-items:center;pointer-events:none;overflow:hidden}
+.celeb .cc{pointer-events:auto;cursor:pointer;background:var(--card);color:var(--ink);border-radius:24px;padding:22px 26px;max-width:min(88vw,380px);text-align:center;box-shadow:0 18px 60px rgba(0,0,0,.35);border:3px solid var(--marker);animation:cpop .55s cubic-bezier(.2,1.4,.4,1) both}
+.celeb .cs{font-size:54px;line-height:1;color:#d9a400;animation:cspin 1.1s ease-in-out infinite alternate}
+.celeb .ch{font-family:var(--display);font-size:26px;font-weight:800;margin:6px 0 2px}
+.celeb .cm{font-size:19px;font-weight:700}
+.celeb .cx{color:var(--ink-soft);font-size:14px;margin-top:6px}
+.celeb i{position:absolute;top:-4vh;width:10px;height:16px;border-radius:2px;opacity:0;animation:cfall var(--t) ease-in var(--d) both}
+@keyframes cpop{0%{transform:scale(.5);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes cspin{from{transform:rotate(-12deg) scale(1)}to{transform:rotate(12deg) scale(1.15)}}
+@keyframes cfall{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:1;transform:translate(var(--dx),108vh) rotate(var(--r))}}
+@media (prefers-reduced-motion:reduce){.celeb{display:none}}
 .pill.gift{background:#fff1b8;color:#5a4400;white-space:normal}
 @media (max-width:480px){nav.tabs button{font-size:12.5px}}
 table.v.sm tbody tr{cursor:pointer}
@@ -346,7 +359,7 @@ const S = {
   tasks: {}, kid: null, taskLoaded: false, vocabLoaded: false,
   vocab: {}, blockDocs: {}, log: [],
   tab: "start", home: null, hlang: null, hdir: {}, vlang: null, vq: "", vlimit: 60, logKid: "all", lastTag: ["", "", ""], vtag: ["", "", ""], vopen: false, vsel: new Set(), vselMode: false,
-  exams: {}, examLog: [], examLoaded: false, mode: "lernen", finalizing: false, finalFail: 0, asgs: {}, pts: {},
+  exams: {}, examLog: [], examLoaded: false, mode: "lernen", finalizing: false, finalFail: 0, asgs: {}, pts: {}, chap: {},
   parentUntil: 0, fails: 0, lockedUntil: 0, busy: false, migrating: false
 };
 Object.defineProperty(S, "task", { get() { return S.tasks[S.kid] || null; }, set(v) { if (v) S.tasks[S.kid] = v; else delete S.tasks[S.kid]; } });
@@ -378,7 +391,7 @@ const touchParent = () => { if (parentOn()) S.parentUntil = Date.now() + 5 * 60 
 const SCHULARTEN = ["Gym", "Real", "Haupt"];
 const tg = w => (Array.isArray(w.t) ? [w.t[0] || "", w.t[1] || "", w.t[2] || ""] : ["", "", ""]);
 const natCmp = (a, b) => String(a).localeCompare(String(b), "de", { numeric: true });
-const tagText = t => [t[0], t[1] ? "Klasse " + t[1] : "", t[2] ? "Lektion " + t[2] : ""].filter(Boolean).join(" · ");
+const tagText = t => [t[0], t[1] ? "Klasse " + t[1] : "", t[2] ? (t[2].includes("|") ? "Lektionen " : "Lektion ") + t[2].split("|").join(", ") : ""].filter(Boolean).join(" · ");
 const fltLabel = f => {
   if (!f) return "";
   const a = [f.s || "", f.k || "", f.l || ""];
@@ -389,10 +402,10 @@ const fltHas = f => !!(f && (f.s || f.k || f.l));
 const selMode = t => (t && t.sel) || (t && fltHas(t.flt) ? "tags" : "range");
 const selLabel = t => selMode(t) === "tags" ? (fltLabel(t.flt) || "alle Vokabeln") : "Nr. " + t.from + "–" + t.to;
 const matchFlt = (w, f) => { if (!f) return true; return vMatch(w, [f.s || "", f.k || "", f.l || ""]); };
-const vMatch = (w, vt) => { const t = tg(w); return vt.every((v, i) => !v || (v === "-" ? t[i] === "" : t[i] === v)); };
-function tagValues(lang) {
+const vMatch = (w, vt) => { const t = tg(w); return vt.every((v, i) => !v || String(v).split("|").some(x => x === "-" ? t[i] === "" : t[i] === x)); };   /* mehrere Werte mit | getrennt (z. B. mehrere Lektionen) */
+function tagValues(lang, kid) {
   const o = [new Set(), new Set(), new Set()];
-  (S.vocab[lang] || []).forEach(w => tg(w).forEach((v, i) => { if (v) o[i].add(v); }));
+  (S.vocab[lang] || []).forEach(w => { if (kid && !saOk(kid, tg(w)[0])) return; tg(w).forEach((v, i) => { if (v) o[i].add(v); }); });
   return o.map((x, i) => [...x].sort(i === 0 ? ((a, b) => (SCHULARTEN.indexOf(a) + 1 || 99) - (SCHULARTEN.indexOf(b) + 1 || 99) || natCmp(a, b)) : natCmp));
 }
 function tagGroups(words) {
@@ -485,13 +498,14 @@ async function saveWords(lang, words) {
 function wordsOf(lang) { return (S.vocab[lang] || []).map(x => ({ ...x })); }
 
 /* ------------------------------------------------------------------ Aufgabe auswürfeln */
-function drawItems(lang, dir, from, to, kid, flt) {
+function drawItems(lang, dir, from, to, kid, flt, restrict) {
   const words = S.vocab[lang] || [];
   const hi = Math.min(to, words.length), lo = Math.max(from, 1);
   const cand = [];
   for (let n = lo; n <= hi; n++) {
     const w = words[n - 1];
     if (!w || !String(w.f).trim() || !String(w.d).trim() || !matchFlt(w, flt)) continue;
+    if (restrict && !saOk(kid, tg(w)[0])) continue;
     const cc = ctr(w, kid), asked = cc[0], f = asked > 0 ? cc[2] / asked : 0.5;
     const wt = 0.5 + 4.5 * f;
     cand.push({ n, key: Math.pow(Math.random() + 1e-9, 1 / wt) });
@@ -509,7 +523,7 @@ async function createTask(kid, lang, dir, from, to, flt, tips, sel, extra) {
   const mode = sel || (fltHas(flt) ? "tags" : "range");
   const f2 = mode === "tags" ? { s: (flt && flt.s) || "", k: (flt && flt.k) || "", l: (flt && flt.l) || "" } : { s: "", k: "", l: "" };
   if (mode === "tags") { from = 1; to = MAXV; }
-  const { items } = drawItems(lang, dir, from, to, kid, f2);
+  const { items } = drawItems(lang, dir, from, to, kid, f2, !(extra && (extra.src === "admin" || extra.src === "asg")));
   if (!items.length) { toast("Im gewählten Bereich sind keine passenden Vokabeln eingetragen."); return false; }
   const task = { kid, kidName: kidName(kid), state: "OFFEN", lang, langName, dir, from, to, flt: f2, sel: mode, tips: !!tips, rep: 0, created: Date.now(), counted: false, src: (extra && extra.src) || "self", ...(extra && extra.asg ? { asg: extra.asg } : {}), items };
   await wset("task/" + kid, task);
@@ -601,6 +615,7 @@ async function finalizeCounts(kid) {
     const pct = 100 * t.ok / Math.max(1, t.items.length);
     if (pct + 1e-9 >= PT.min) { const cat = (t.src === "admin" || t.asg) ? 2 : 1; pts = cat === 2 ? PT.asg : PT.own; await awardPoints(kid, "t" + t.created, cat, pts, ptLabel(t)); }
     if (t.asg) await creditAsg(t.asg, "t" + t.created, pct);
+    await recordChapRun(kid, t, pct);
   }
   await wupdate("task/" + kid, { counted: true, pts });
   S.tasks[kid] = { ...t, counted: true, pts };
@@ -741,7 +756,7 @@ function viewSig() {
   const v = Object.keys(S.vocab).map(k => k + ":" + S.vocab[k].reduce((n, w) => n + Object.values(w.c || {}).reduce((q, a) => q + a[0] + a[1] + a[2], 0) + w.f.length + w.d.length + (w.h || "").length + tg(w).join("|").length, 0) + "/" + S.vocab[k].length).join(",");
   const t = Object.values(S.tasks).map(x => [x.kid, x.state, x.created, x.counted, x.items.length, x.ok]);
   const ex = Object.values(S.exams).map(x => [x.kid, x.state, x.created, x.logged, x.items.length, x.ok]);
-  return JSON.stringify([S.settings, S.kid, S.home, S.hlang, t, ex, S.mode, S.examLog.length, v, S.log.length, S.sync, S.canWrite, S.booted, S.settingsLoaded, S.vocabLoaded, S.taskLoaded, S.examLoaded, !!S.db, asgSig(), ptsSig()]);
+  return JSON.stringify([S.settings, S.kid, S.home, S.hlang, t, ex, S.mode, S.examLog.length, v, S.log.length, S.sync, S.canWrite, S.booted, S.settingsLoaded, S.vocabLoaded, S.taskLoaded, S.examLoaded, !!S.db, asgSig(), ptsSig(), chapSig(), JSON.stringify([S.settings && S.settings.kids, S.settings && S.settings.chapPass, S.settings && S.settings.chapSecs])]);
 }
 function softRender() {
   if (viewSig() === lastSig) return;          // nichts Sichtbares hat sich geändert
@@ -777,9 +792,10 @@ function renderAll() {
   if (!S.settingsLoaded || !S.vocabLoaded || !S.taskLoaded || !S.examLoaded) { root.append(h("div", { class: "empty" }, "Lade Daten …")); return; }
   if (!S.settings) { root.append(LOCAL ? localWelcome() : setupView()); return; }
   if (!S.canWrite) root.append(h("div", { class: "banner warn" }, "Nur Lesezugriff: Änderungen sind mit diesem Zugang nicht möglich."));
-  root.append(S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "ziele" ? zieleView() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
+  const gated = S.tab !== "start" && S.tab !== "eltern" && needProfile(S.kid);
+  root.append(gated ? profileGate(S.kid) : S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "ziele" ? zieleView() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
   root.append(tabsNav());
-  if (S.tab === "lernen") { const ab = actionBar(); if (ab) root.append(ab); }
+  if (S.tab === "lernen" && !gated) { const ab = actionBar(); if (ab) root.append(ab); }
   syncExamTimer();
   if (keep) { const n = document.querySelector('[data-key="' + keep.key + '"]'); if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
   window.scrollTo(0, scroll);
@@ -874,10 +890,10 @@ function catProgress(lang, kid) {
   const m = new Map();
   (S.vocab[lang] || []).forEach(w => { const t = tg(w), key = t.join("\u0001"); if (!m.has(key)) m.set(key, { t, words: [] }); m.get(key).words.push(w); });
   const so = a => SCHULARTEN.indexOf(a) + 1 || 99;
-  return [...m.values()].map(g => ({ ...g, ...progressOf(g.words, kid) }))
+  return [...m.values()].map(g => ({ ...g, ...progressOf(g.words, kid) })).filter(g => saOk(kid, g.t[0]))
     .sort((x, y) => (x.t[0] ? so(x.t[0]) : 100) - (y.t[0] ? so(y.t[0]) : 100) || natCmp(x.t[1], y.t[1]) || natCmp(x.t[2], y.t[2]));
 }
-const examDone = (lang, kid, t) => S.examLog.some(l => l.kid === kid && l.lang === lang && l.passed && fltHas(l.flt) && (!l.flt.s || l.flt.s === t[0]) && (!l.flt.k || l.flt.k === t[1]) && (!l.flt.l || l.flt.l === t[2]));
+const examDone = (lang, kid, t) => S.examLog.some(l => l.kid === kid && l.lang === lang && l.passed && fltHas(l.flt) && (!l.flt.s || l.flt.s === t[0]) && (!l.flt.k || l.flt.k === t[1]) && (!l.flt.l || String(l.flt.l).split("|").includes(t[2])));
 const pbar = pct => h("div", { class: "pbar" + (pct >= 80 ? " done" : ""), role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, h("i", { style: "width:" + pct + "%" }));
 function pickTile(id) {
   flushAnswers(); S.kid = id; try { localStorage.setItem("vt_kid", id); } catch (e) {}
@@ -887,7 +903,7 @@ function startView() {
   const act = activeKids();
   const home = (S.home && act.some(k => k.id === S.home)) ? S.home : (act.length === 1 ? act[0].id : null);
   if (home && S.kid !== home) { S.kid = home; }
-  const v = home ? personHome(home, act.length > 1) : tilesView();
+  const v = home ? (needProfile(home) ? profileGate(home) : personHome(home, act.length > 1)) : tilesView();
   return LOCAL ? h("div", { class: "stack" }, v, S.settings && (S.log.length || S.examLog.length || Object.keys(S.pts).length) ? localFeedbackCard() : null, localImportCard()) : v;
 }
 function tilesView() {
@@ -915,20 +931,21 @@ function personHome(kid, canSwitch) {
     h("b", null, t.state === "OFFEN" ? "Deine Übung läuft" : "Letzte Übung: " + t.ok + " von " + t.items.length + " richtig"),
     h("div", { class: "muted" }, t.langName + ", " + selLabel(t)),
     h("button", { class: "btn", onclick: () => { S.mode = "lernen"; S.tab = "lernen"; renderAll(); window.scrollTo(0, 0); } }, t.state === "OFFEN" ? "Weitermachen" : "Ergebnis ansehen")));
-  { const pp = ptsOf(kid), lv = levelOf(pp.total), openA = asgOf(kid).filter(a => !a.doneAt);
+  { const pp = ptsOf(kid), li = levelInfo(kid), openA = asgOf(kid).filter(a => !a.doneAt);
     w.append(h("div", { class: "card stack" },
       h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
-        h("div", null, h("b", null, "Level " + lv.lv + " · " + lv.name), h("div", { class: "muted" }, pp.total + (pp.total === 1 ? " Punkt" : " Punkte"))),
+        h("div", null, h("b", null, fullTitle(li.lt, li.la)), h("div", { class: "muted" }, li.total + (li.total === 1 ? " Punkt" : " Punkte") + " · Titel-Level " + li.lt + ", Adjektiv-Level " + li.la)),
         h("button", { class: "btn small " + (openA.length ? "" : "sec"), onclick: () => { S.tab = "ziele"; renderAll(); window.scrollTo(0, 0); } }, openA.length ? openA.length + (openA.length === 1 ? " offener Auftrag" : " offene Aufträge") : "Ziele")),
-      pbar(Math.round(100 * lv.into / lv.step)))); }
-  const langs = S.settings.langs.filter(l => (S.vocab[l.id] || []).length);
+      pbar(li.tProg ? li.tProg.pct : 100))); }
+  readyChapters(kid).forEach(r => w.append(readyCard(r, kid)));
+  const langs = allowedLangs(kid).filter(l => visWords(l.id, kid).length);
   if (!langs.length) { w.append(h("div", { class: "empty" }, LOCAL ? "Im Lern-Paket sind noch keine Vokabeln enthalten." : "Noch keine Vokabeln. Trage sie im Bereich „Vokabeln“ ein.")); return w; }
   if (!langs.some(l => l.id === S.hlang)) S.hlang = langs[0].id;
 
   w.append(h("h3", null, "Gesamtfortschritt je Sprache"));
   const pick = l => { S.hlang = l.id; renderAll(); };
   w.append(h("div", { class: "stack" }, langs.map(l => {
-    const p = progressOf(S.vocab[l.id], kid), sel = l.id === S.hlang;
+    const p = progressOf(visWords(l.id, kid), kid), sel = l.id === S.hlang;
     const card = h("div", { class: "card lang stack" + (sel ? " sel" : ""), role: "button", tabindex: "0", "aria-pressed": sel ? "true" : "false", "aria-label": l.name + ", " + p.pct + " Prozent" },
       h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("b", null, l.name), h("span", { class: "big2" }, p.pct + " %")),
       pbar(p.pct), h("div", { class: "muted" }, p.tried + " von " + p.n + " Vokabeln geübt"));
@@ -944,13 +961,15 @@ function personHome(kid, canSwitch) {
     [["f2d", "Fremdsprache → Deutsch"], ["d2f", "Deutsch → Fremdsprache"], ["mix", "Gemischt"]].map(([v, l]) => h("button", { type: "button", "aria-pressed": dir === v ? "true" : "false", onclick: () => { S.hdir[kid] = v; renderAll(); } }, l))));
   w.append(h("button", { class: "btn sec", disabled: !S.canWrite, onclick: () => startSelf(kid, lang.id, null) }, "Gemischt üben (alle Vokabeln)"));
   cats.forEach(c => {
-    const label = tagText(c.t) || "Ohne Tags", started = c.tried > 0, ex = examDone(lang.id, kid, c.t);
+    const label = tagText(c.t) || "Ohne Tags", started = c.tried > 0, ex = examDone(lang.id, kid, c.t), cs = chapState(kid, chapKey(lang.id, c.t));
     const flt = c.t.some(Boolean) ? { s: c.t[0] || "-", k: c.t[1] || "-", l: c.t[2] || "-" } : { s: "-", k: "-", l: "-" };
-    w.append(h("div", { class: "card stack" },
+    w.append(h("div", { class: "card stack" + (cs.master ? " chapm" : cs.ready ? " chapr" : "") },
       h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("b", null, label), h("span", { class: "big2" }, c.pct + " %")),
       pbar(c.pct),
       h("div", { class: "row" }, h("span", { class: "muted" }, c.tried + " von " + c.n + " geübt"),
-        h("span", { class: "pill " + (started ? "ok" : "n") }, started ? "begonnen" : "noch nicht begonnen"), ex ? h("span", { class: "pill ok" }, "Prüfung bestanden ✓") : null),
+        h("span", { class: "pill " + (started ? "ok" : "n") }, started ? "begonnen" : "noch nicht begonnen"), cs.master ? h("span", { class: "pill gift" }, "Gemeistert") : ex ? h("span", { class: "pill ok" }, "Prüfung bestanden ✓") : null, cs.ready ? h("span", { class: "pill ok" }, "Prüfungsreif") : null),
+      h("div", { class: "muted" }, "Rating " + starsText(cs.stars) + (cs.ready ? "" : " · 6 Übungen in Folge mit 100 % schalten die Kapitelprüfung frei")),
+      cs.ready ? h("button", { class: "btn", style: "background:var(--ok)", disabled: S.busy || !S.canWrite, onclick: () => startChapterExam(kid, lang.id, c.t) }, "Kapitelprüfung starten") : null,
       h("button", { class: "btn", disabled: !S.canWrite, onclick: () => startSelf(kid, lang.id, flt) }, "Üben")));
   });
   w.append(h("p", { class: "muted", style: "margin:0;font-size:13px" }, "So wird der Fortschritt berechnet: Jede Vokabel zählt mit ihrer Trefferquote, voll gewertet ab drei Abfragen. Neue Vokabeln zählen 0 %. Der Wert steigt, je öfter du richtig antwortest."));
@@ -992,7 +1011,7 @@ const VTC = window.VTC || (() => {
 /* ---- Lern-Paket: Daten für die Lern-Version (Geräte ohne Claude-Zugang) ---- */
 const PKG_KIND = "vokabeltrainer-lernpaket";
 function buildPackage(kidIds, withStats) {
-  const kids = kidsOf().filter(k => kidIds.includes(k.id)).map(k => ({ id: k.id, name: k.name, active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}) }));
+  const kids = kidsOf().filter(k => kidIds.includes(k.id)).map(k => ({ id: k.id, name: k.name, active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}), ...(cleanProf(k.prof) ? { prof: cleanProf(k.prof) } : {}) }));
   const ids = kids.map(k => k.id), cfgs = {};
   ids.forEach(id => { if (S.settings.cfgs && S.settings.cfgs[id]) cfgs[id] = S.settings.cfgs[id]; });
   const words = {};
@@ -1003,7 +1022,7 @@ function buildPackage(kidIds, withStats) {
       return [x.f, x.d, x.h || "", c, tg(x)];
     });
   });
-  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
+  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, chapPass: chapPass(), chapSecs: chapSecs(), chap: withStats ? Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])) : {}, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
 }
 const randPw = () => { const al = "abcdefghjkmnpqrstuvwxyz23456789", r = crypto.getRandomValues(new Uint32Array(10)); const t = Array.from(r, x => al[x % al.length]).join(""); return t.slice(0, 5) + "-" + t.slice(5); };
 async function packageDialog() {
@@ -1053,7 +1072,7 @@ async function importPackage(pkg, useStats) {
   if (!validPackage(pkg)) throw new Error("Das ist kein Lern-Paket dieser App.");
   const str = (x, n) => String(x == null ? "" : x).slice(0, n);
   const langs = pkg.langs.slice(0, 20).map(l => ({ id: str(l.id, 40), name: str(l.name, 60) })).filter(l => l.id && l.name);
-  const kids = pkg.kids.slice(0, 20).map(k => ({ id: str(k.id, 40), name: str(k.name, 60), active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}) })).filter(k => k.id && k.name);
+  const kids = pkg.kids.slice(0, 20).map(k => ({ id: str(k.id, 40), name: str(k.name, 60), active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}), ...(cleanProf(k.prof) ? { prof: cleanProf(k.prof) } : (() => { const o = kidsOf().find(x => x.id === str(k.id, 40)); return o && o.prof ? { prof: o.prof } : {}; })()) })).filter(k => k.id && k.name);
   if (!langs.length || !kids.length) throw new Error("Das Paket enthält keine Sprache oder keine Person.");
   const ids = kids.map(k => k.id), key = x => x.f + "\u0001" + x.d, cl = a => a.slice(0, 3).map(n => Math.max(0, Math.round(Number(n) || 0)));
   let total = 0, added = 0;
@@ -1071,7 +1090,8 @@ async function importPackage(pkg, useStats) {
   const cur = S.settings || {};
   for (const l of (cur.langs || []).filter(l => !langs.some(x => x.id === l.id))) await saveWords(l.id, []);
   await wset("app/settings", { v: 2, salt: cur.salt || uid(), pwHash: cur.pwHash || ("x" + uid() + uid()), langs, kids,
-    cfgs: pkg.cfgs && typeof pkg.cfgs === "object" ? pkg.cfgs : (cur.cfgs || {}), cfg: pkg.cfg && typeof pkg.cfg === "object" ? pkg.cfg : (cur.cfg || { lang: langs[0].id, dir: "f2d", from: 1, to: 50 }) });
+    cfgs: pkg.cfgs && typeof pkg.cfgs === "object" ? pkg.cfgs : (cur.cfgs || {}), cfg: pkg.cfg && typeof pkg.cfg === "object" ? pkg.cfg : (cur.cfg || { lang: langs[0].id, dir: "f2d", from: 1, to: 50 }),
+    chapPass: Number(pkg.chapPass) >= 50 && Number(pkg.chapPass) <= 100 ? Math.round(Number(pkg.chapPass)) : (cur.chapPass || 95), chapSecs: pkg.chapSecs != null ? cleanSecs(pkg.chapSecs) : (cur.chapSecs == null ? 15 : cur.chapSecs) });
   await mergeFromPackage(pkg, ids);
   return { words: total, added, kids: kids.length, langs: langs.length };
 }
@@ -1116,7 +1136,7 @@ function buildFeedback() {
   const asg = Object.values(S.asgs).filter(a => ids.includes(a.kid)).map(a => ({ id: a.id, kid: a.kid, prog: a.prog || {}, doneAt: a.doneAt || null }));
   const pts = Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)]));
   const exams = S.examLog.filter(l => ids.includes(l.kid)).slice(0, 10);
-  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log, asg, pts, exams };
+  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log, asg, pts, exams, chap: Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])), profs: Object.fromEntries(ids.filter(id => profOn(kidObj(id))).map(id => [id, kidObj(id).prof])) };
 }
 async function saveFeedback() {
   const fb = buildFeedback(), names = fb.kids.map(k => k.name).join("_").replace(/[^\wäöüÄÖÜß-]+/g, "_").slice(0, 40);
@@ -1167,7 +1187,7 @@ async function applyFeedback(fb) {
   for (const e of fb.log.slice(0, 200)) {
     if (!e || !known.has(e.kid) || !langIds.has(e.lang) || !Number.isFinite(Number(e.ts))) continue;
     const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), lang: e.lang, langName: str(e.langName, 60), dir: cleanDir(e.dir), from: num(e.from), to: num(e.to), n: num(e.n), ok: num(e.ok), bad: num(e.bad), rep: num(e.rep),
-      flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 40) } : null, sel: e.sel === "tags" ? "tags" : "range",
+      flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 200) } : null, sel: e.sel === "tags" ? "tags" : "range",
       items: (Array.isArray(e.items) ? e.items : []).slice(0, 80).map(a => [str(a[0], 200), str(a[1], 200), str(a[2], 200), a[3] ? 1 : 0, num(a[4])]) };
     const id = "log/r" + doc.ts + "_" + doc.kid;
     if (S.log.some(x => x.kid === doc.kid && x.ts === doc.ts)) continue;
@@ -1176,6 +1196,7 @@ async function applyFeedback(fb) {
   let nPts = 0, nAsg = 0, nEx = 0;
   for (const k of kids) {
     if (fb.pts && typeof fb.pts === "object" && fb.pts[k.id]) { const m = mergePts(S.pts[k.id], fb.pts[k.id], k.id); await wset("pts/" + k.id, m); S.pts[k.id] = m; nPts++; }
+    if (fb.chap && typeof fb.chap === "object" && fb.chap[k.id]) { const m = mergeChap(S.chap[k.id], fb.chap[k.id], k.id); await wset("chap/" + k.id, m); S.chap[k.id] = m; }
   }
   for (const x of (Array.isArray(fb.asg) ? fb.asg : []).slice(0, 300)) {
     const cur = x && S.asgs[x.id]; if (!cur || !known.has(cur.kid) || x.kid !== cur.kid) continue;
@@ -1187,12 +1208,16 @@ async function applyFeedback(fb) {
     if (!e || !known.has(e.kid) || !langIds.has(e.lang) || !Number.isFinite(Number(e.ts))) continue;
     if (S.examLog.some(x => x.kid === e.kid && x.ts === Number(e.ts))) continue;
     const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), mode: "pruefung", lang: e.lang, langName: str(e.langName, 60), dir: cleanDir(e.dir),
-      flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 40) } : null, n: num(e.n), ok: num(e.ok), bad: num(e.bad), passed: !!e.passed,
+      flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 200) } : null, n: num(e.n), ok: num(e.ok), bad: num(e.bad), passed: !!e.passed,
       note: Math.max(1, Math.min(6, num(e.note) || 6)), punkte: e.punkte != null ? num(e.punkte) : null, key: e.key === "op" ? "op" : "std", klasse: str(e.klasse, 10),
       items: (Array.isArray(e.items) ? e.items : []).slice(0, EXAM_MAX).map(a => [str(a[0], 200), str(a[1], 200), str(a[2], 200), a[3] ? 1 : 0, 0]) };
     await wset("exam_log/r" + doc.ts + "_" + doc.kid, doc); nEx++;
   }
-  return { upd, missing, logs, kids: kids.length, pts: nPts, asg: nAsg, exams: nEx };
+  let nProf = 0;
+  { const adopt = {};
+    for (const k of kids) { const kk = kidObj(k.id); if (kk && !profOn(kk) && fb.profs && typeof fb.profs === "object" && fb.profs[k.id]) { const p = cleanProf(fb.profs[k.id]); if (p && p.langs.every(l => langIds.has(l.id))) adopt[k.id] = { ...p, extra: [] }; } }
+    if (Object.keys(adopt).length) { await wupdate("app/settings", { kids: kidsOf().map(x => adopt[x.id] ? { ...x, prof: adopt[x.id] } : x) }); nProf = Object.keys(adopt).length; } }
+  return { upd, missing, logs, kids: kids.length, pts: nPts, asg: nAsg, exams: nEx, profs: nProf };
 }
 async function importFeedbackDialog() {
   await modal("Lernstand einlesen", (box, close) => {
@@ -1208,7 +1233,7 @@ async function importFeedbackDialog() {
       close(true);
       const ok = await confirmBox("Lernstand einlesen?", "Von: " + sm.kids.map(k => k.name).join(", ") + ". Stand vom " + fmtShort(Date.parse(fb.created) || Date.now()) + ". " + sm.words + " Vokabeln mit Lernstand, " + sm.logs + " Übungen fürs Protokoll. Bei jeder Vokabel gilt der Stand mit mehr Abfragen; nichts wird doppelt gezählt." + (sm.other ? " " + sm.other + " Person(en) aus der Datei gibt es hier nicht und werden übersprungen." : ""), "Einlesen");
       if (!ok) return;
-      try { const r = await applyFeedback(fb); toast("Eingelesen: " + r.upd + " Vokabelstände aktualisiert, " + r.logs + " Übungen im Protokoll" + (r.exams ? ", " + r.exams + (r.exams === 1 ? " Prüfung" : " Prüfungen") : "") + (r.pts ? ", Punkte von " + r.pts + (r.pts === 1 ? " Person" : " Personen") : "") + (r.asg ? ", Fortschritt bei " + r.asg + (r.asg === 1 ? " Auftrag" : " Aufträgen") : "") + "." + (r.missing ? " " + r.missing + " Vokabeln nicht gefunden (inzwischen geändert)." : "")); renderAll(); }
+      try { const r = await applyFeedback(fb); toast("Eingelesen: " + r.upd + " Vokabelstände aktualisiert, " + r.logs + " Übungen im Protokoll" + (r.exams ? ", " + r.exams + (r.exams === 1 ? " Prüfung" : " Prüfungen") : "") + (r.pts ? ", Punkte von " + r.pts + (r.pts === 1 ? " Person" : " Personen") : "") + (r.asg ? ", Fortschritt bei " + r.asg + (r.asg === 1 ? " Auftrag" : " Aufträgen") : "") + (r.profs ? ", Profil von " + r.profs + (r.profs === 1 ? " Person" : " Personen") : "") + "." + (r.missing ? " " + r.missing + " Vokabeln nicht gefunden (inzwischen geändert)." : "")); renderAll(); }
       catch (e) { toastErr(e, "Das Einlesen ist fehlgeschlagen."); }
     };
     box.append(h("p", { class: "muted", style: "margin:0" }, "Wähle die Lernstand-Datei (.json), die du aus der Lern-Version bekommen hast."), file, ta,
@@ -1309,14 +1334,14 @@ function pruefungView() {
     finalizeExam(k).catch(() => { S.finalFail = t.created; }).finally(() => { S.finalizing = false; });
   }
   wrap.append(h("div", { class: "span banner " + (open ? "open" : t.passed ? "open" : "lock") },
-    open ? "Prüfung läuft: Du siehst immer nur eine Vokabel und kannst nicht zurück." + (t.secs ? " Pro Vokabel hast du " + t.secs + " Sekunden, danach wird die Eingabe gesperrt und es geht automatisch weiter." : "") + " Bestanden ist sie nur mit 100 % richtigen Antworten. Es gibt keine Tipps und keine Wiederholung. Groß- und Kleinschreibung wird geprüft. Zusätzlich gibt es eine Note."
-      : t.passed ? "Bestanden! Alle Antworten sind richtig." : "Nicht bestanden. Bestanden ist eine Prüfung nur mit 100 % richtigen Antworten."));
+    open ? "Prüfung läuft: Du siehst immer nur eine Vokabel und kannst nicht zurück." + (t.secs ? " Pro Vokabel hast du " + t.secs + " Sekunden, danach wird die Eingabe gesperrt und es geht automatisch weiter." : "") + " Bestanden ist sie ab " + (t.pass || 100) + " % richtigen Antworten. Es gibt keine Tipps und keine Wiederholung. Groß- und Kleinschreibung wird geprüft. Zusätzlich gibt es eine Note."
+      : t.passed ? "Bestanden! " + t.ok + " von " + t.items.length + " richtig (nötig: " + (t.pass || 100) + " %)." : "Nicht bestanden. Bestanden ist eine Prüfung ab " + (t.pass || 100) + " % richtigen Antworten."));
   wrap.append(h("div", { class: "span meta" },
     h("span", { class: "chip" }, h("b", null, "Prüfung")),
     h("span", { class: "chip" }, "Mappe: ", h("b", null, t.langName)),
     h("span", { class: "chip" }, h("b", null, dirLabel(t.dir))),
     fltLabel(t.flt) ? h("span", { class: "chip" }, h("b", null, fltLabel(t.flt))) : null,
-    h("span", { class: "chip" }, h("b", null, t.items.length + " Vokabeln")), t.secs ? h("span", { class: "chip" }, h("b", null, t.secs + " s pro Vokabel")) : null));
+    h("span", { class: "chip" }, h("b", null, t.items.length + " Vokabeln")), t.secs ? h("span", { class: "chip" }, h("b", null, t.secs + " s pro Vokabel")) : null, h("span", { class: "chip" }, h("b", null, "bestanden ab " + (t.pass || 100) + " %"))));
   if (!open) {
     wrap.append(h("div", { class: "span card" },
       h("div", { class: "score" }, h("span", { class: "big" }, t.ok + " / " + t.items.length), h("span", { class: "pill " + (t.passed ? "ok" : "bad") }, t.passed ? "bestanden" : "nicht bestanden"), t.pts ? h("span", { class: "pill ok" }, "+" + t.pts + " Punkte") : null),
@@ -1423,7 +1448,7 @@ async function flushAnswers() {
 
 /* ---- Vokabeln ---- */
 function vokabelnView() {
-  const langs = S.settings.langs;
+  const hideSa = !parentOn(), langs = hideSa ? allowedLangs(S.kid) : S.settings.langs;
   if (!S.vlang || !langs.some(l => l.id === S.vlang)) S.vlang = (langs[0] || {}).id;
   const words = S.vocab[S.vlang] || [];
   const w = h("div", { class: "stack" });
@@ -1453,14 +1478,16 @@ function vokabelnView() {
 
   // Übersicht nach Tags
   if (words.length) {
-    const groups = tagGroups(words);
+    const groups = tagGroups(hideSa ? words.filter(x => saOk(S.kid, tg(x)[0])) : words);
     const det = h("details", { class: "card", open: S.vopen ? true : null },
       h("summary", { style: "cursor:pointer;font-weight:600" }, "Übersicht nach Schulart, Klasse, Lektion (" + groups.length + (groups.length === 1 ? " Gruppe)" : " Gruppen)")),
       h("div", { class: "scroll", style: "margin-top:10px" }, h("table", { class: "v proto" },
-        h("thead", null, h("tr", null, ["Gruppe", "Anzahl", "Quote " + (multiKids() ? kidName(S.kid) : ""), ""].map(x => h("th", null, x.trim())))),
+        h("thead", null, h("tr", null, ["Gruppe", "Anzahl", "Quote " + (multiKids() ? kidName(S.kid) : ""), "Rating", ""].map(x => h("th", null, x.trim())))),
         h("tbody", null, groups.map(g => { const pct = g.a ? Math.round(100 * g.r / g.a) : null;
-          return h("tr", null, h("td", null, tagText(g.t) || "Ohne Tags"), h("td", { class: "s" }, String(g.n)),
+          const cs = chapState(S.kid, chapKey(S.vlang, g.t));
+          return h("tr", { class: cs.master ? "chapm" : cs.ready ? "chapr" : null }, h("td", null, tagText(g.t) || "Ohne Tags", cs.master ? h("div", { class: "pill gift", style: "margin-top:4px" }, "Gemeistert") : cs.ready ? h("div", { class: "pill ok", style: "margin-top:4px" }, "Prüfungsreif") : null), h("td", { class: "s" }, String(g.n)),
             h("td", null, pct == null ? "–" : h("span", { class: "pill " + (pct >= 80 ? "ok" : pct >= 50 ? "mid" : "bad") }, pct + " %")),
+            h("td", { class: "s", title: "Sterne = Übungen in Folge mit 100 %" }, cs.stars || cs.master ? starsText(cs.stars) : "–"),
             h("td", null, h("button", { class: "btn small sec", onclick: () => { S.vtag = g.t.map(v => v || "-"); if (!g.t.some(Boolean)) S.vtag = ["-", "-", "-"]; S.vlimit = 60; S.vopen = true; renderAll(); } }, "Anzeigen")));
         })))));
     det.addEventListener("toggle", () => { S.vopen = det.open; });
@@ -1470,14 +1497,14 @@ function vokabelnView() {
   // Filter + Liste
   const q = h("input", { type: "text", placeholder: "Suchen …", value: S.vq, "data-key": "vq" });
   q.addEventListener("input", () => { S.vq = q.value; S.vlimit = 60; renderAll(); });
-  const tv = tagValues(S.vlang), needle = norm(S.vq);
+  const tv = tagValues(S.vlang, hideSa ? S.kid : null), needle = norm(S.vq);
   const mk = (i, label, fmt) => h("select", { "aria-label": label, onchange: e => { S.vtag[i] = e.target.value; S.vlimit = 60; renderAll(); } },
     h("option", { value: "" }, label + ": alle"), h("option", { value: "-", selected: S.vtag[i] === "-" }, label + ": ohne"),
     tv[i].map(v => h("option", { value: v, selected: S.vtag[i] === v }, fmt(v))));
   const filterRow = tv.some(a => a.length) || S.vtag.some(Boolean)
     ? h("div", { class: "row" }, h("div", { class: "grow" }, mk(0, "Schulart", v => v)), h("div", { class: "grow" }, mk(1, "Klasse", v => "Klasse " + v)), h("div", { class: "grow" }, mk(2, "Lektion", v => "Lektion " + v)),
         S.vtag.some(Boolean) ? h("button", { class: "btn small sec", onclick: () => { S.vtag = ["", "", ""]; renderAll(); } }, "Filter löschen") : null) : null;
-  const rows = []; words.forEach((x, i) => { if (vMatch(x, S.vtag) && (!needle || norm(x.f).includes(needle) || norm(x.d).includes(needle))) rows.push([x, i]); });
+  const rows = []; words.forEach((x, i) => { if (vMatch(x, S.vtag) && (!hideSa || saOk(S.kid, tg(x)[0])) && (!needle || norm(x.f).includes(needle) || norm(x.d).includes(needle))) rows.push([x, i]); });
   const sm = S.vselMode;
   const shownSel = () => rows.filter(([, i]) => S.vsel.has(i)).length, hiddenSel = () => S.vsel.size - shownSel();
   const cnt = h("b", { "aria-live": "polite" });
@@ -1946,7 +1973,8 @@ async function resetStatsDialog() {
 function kidsCard() {
   const kids = kidsOf();
   const c = h("div", { class: "card stack" }, h("h2", null, "Personen"));
-  kids.forEach(k => c.append(h("div", { class: "row" }, avatar(k, "sm"), h("span", { class: "grow" }, h("b", null, k.name)),
+  kids.forEach(k => c.append(h("div", { class: "row" }, avatar(k, "sm"), h("span", { class: "grow" }, h("b", null, k.name), h("div", { class: "muted" }, profOn(k) ? profLabel(k) : "Profil noch nicht ausgefüllt (die Person muss es beim nächsten Start ausfüllen)")),
+    h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => profileDialog(k) }, profOn(k) ? "Profil ändern" : "Profil"),
     h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => photoDialog(k) }, okPhoto(k.photo) ? "Foto ändern" : "Foto"),
     h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => renameKid(k) }, "Umbenennen"),
     h("button", { class: "btn small sec", disabled: !S.canWrite || kids.length < 2, onclick: () => deleteKid(k) }, "Löschen"))));
@@ -1974,6 +2002,7 @@ async function deleteKid(k) {
     await wdelete("exam/" + k.id); delete S.exams[k.id];
     for (const a of asgOf(k.id)) { await wdelete("asg/" + a.id); delete S.asgs[a.id]; }
     if (S.pts[k.id]) { await wdelete("pts/" + k.id); delete S.pts[k.id]; }
+    if (S.chap[k.id]) { await wdelete("chap/" + k.id); delete S.chap[k.id]; }
     pickKid(); renderAll();
   } catch (e) { toastErr(e); }
 }
@@ -2048,8 +2077,11 @@ async function finalizeExam(kid) {
   await wset("exam_log/e" + t.created + "_" + kid, { ts: t.submitted, kid, kidName: kidName(kid), mode: "pruefung", lang: t.lang, langName: t.langName, dir: t.dir, flt: t.flt || null,
     n: t.items.length, ok: t.ok, bad: t.bad, passed: !!t.passed, ...(t.note != null ? { note: t.note, punkte: t.punkte != null ? t.punkte : null, key: t.key, klasse: t.klasse || "" } : (() => { const g = examGrade(t); return { note: g.note, punkte: g.punkte, key: g.key, klasse: g.klasse }; })()), items: t.items.map(i => [i.q, i.a || "", i.s, i.ok ? 1 : 0, 0]) });
   let pts = 0;
+  if (t.passed) celebrate({ kind: "exam", kid, main: t.ok + " von " + t.items.length + " richtig", sub: "Bestehensgrenze " + (t.pass || 100) + " %" });
   { const pct = 100 * t.ok / Math.max(1, t.items.length);
     if (pct + 1e-9 >= PT.min) { pts = PT.exam; await awardPoints(kid, "e" + t.created, 3, pts, ptLabel(t)); }
+    if (t.items.length && t.ok === t.items.length) await awardPoints(kid, "p" + t.created, 4, 0, ptLabel(t));
+    if (t.chap && t.passed) await recordChapPass(kid, t.chap, t.submitted);
     if (t.asg) await creditAsg(t.asg, "e" + t.created, pct); }
   await wupdate("exam/" + kid, { logged: true, pts });
   S.exams[kid] = { ...t, logged: true, pts };
@@ -2058,13 +2090,13 @@ async function submitExam(auto) {
   const kid = S.kid, cur = S.exams[kid];
   if (S.busy || !cur || cur.state !== "OFFEN") return;
   const empty = cur.items.filter(i => !norm(i.a)).length;
-  const go = auto === true ? true : await confirmBox("Prüfung jetzt abgeben?", (empty ? empty + " Feld(er) sind noch leer und zählen als falsch. " : "") + "Bestanden ist die Prüfung nur mit 100 % richtigen Antworten. Danach kann nichts mehr geändert werden.", "Prüfung abgeben");
+  const go = auto === true ? true : await confirmBox("Prüfung jetzt abgeben?", (empty ? empty + " Feld(er) sind noch leer und zählen als falsch. " : "") + "Bestanden ist die Prüfung ab " + (cur.pass || 100) + " % richtigen Antworten. Danach kann nichts mehr geändert werden.", "Prüfung abgeben");
   if (!go || !S.exams[kid] || S.exams[kid].state !== "OFFEN") return;
   S.busy = true; renderAll();
   try {
     const t = clone(S.exams[kid]);
     t.items.forEach(i => { i.ok = isCorrect(i.a, i.s); });
-    t.ok = t.items.filter(i => i.ok).length; t.bad = t.items.length - t.ok; t.passed = t.items.length > 0 && t.bad === 0;
+    t.ok = t.items.filter(i => i.ok).length; t.bad = t.items.length - t.ok; t.passed = t.items.length > 0 && 100 * t.ok / t.items.length + 1e-9 >= (t.pass || 100);
     { const g = gradeFor(t.ok, t.items.length, examKlasse(t)); t.note = g.note; t.punkte = g.punkte; t.key = g.key; t.klasse = g.klasse; }
     t.state = "ABGEGEBEN"; t.submitted = Date.now(); t.logged = false;
     await wset("exam/" + kid, t); S.exams[kid] = t;
@@ -2083,8 +2115,8 @@ async function startExamDialog(kid0) {
     const ks = h("select", null, kids.map(k => h("option", { value: k.id, selected: k.id === kid0 }, k.name)));
     const sel = h("select", null, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
     const dir = dirSelect(cfg.dir);
-    const fs = fltSelects(sel.value, {});
-    const secs = secSelect(10);
+    const fs = fltSelectsX(sel.value, {});
+    const secs = secSelect(10), passIn = h("input", { type: "number", min: 50, max: 100, value: 100, inputmode: "numeric", "aria-label": "Bestehensgrenze in Prozent" });
     const info = h("div", { class: "muted" });
     const st = () => { const f = fs.get(); return { f, has: !!(f.s || f.k || f.l), n: examWords(sel.value, f).length }; };
     const upd = () => { const { has, n } = st(); info.textContent = !has ? "Bitte mindestens ein Tag (Schulart, Klasse oder Lektion) wählen." : n + " Vokabeln werden abgefragt – alle passenden, ohne Begrenzung auf 30." + (n > EXAM_MAX ? " Das sind zu viele (max. " + EXAM_MAX + "), bitte die Tags enger wählen." : ""); };
@@ -2099,7 +2131,7 @@ async function startExamDialog(kid0) {
       if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung verwerfen?", "Die bisherigen Antworten von " + kidName(kid) + " gehen verloren.", "Verwerfen & neu starten", true))) return;
       const items = examWords(sel.value, f).map(({ w, n: nr }) => ({ n: nr, f: w.f, d: w.d, ...qa(w, dir.value), a: "", ok: null }));
       for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: sel.value, langName: (langs.find(l => l.id === sel.value) || {}).name || "", dir: dir.value, flt: f, created: Date.now(), logged: false, secs: cleanSecs(secs.value), pos: 0, pstart: null, items };
+      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: sel.value, langName: (langs.find(l => l.id === sel.value) || {}).name || "", dir: dir.value, flt: f, created: Date.now(), logged: false, secs: cleanSecs(secs.value), pass: Math.max(50, Math.min(100, Math.round(+passIn.value) || 100)), pos: 0, pstart: null, items };
       try {
         await wset("exam/" + kid, exam); S.exams[kid] = exam; close(true); toast("Prüfung für " + kidName(kid) + " gestartet.");
         if (kid === S.kid) { S.tab = "lernen"; S.mode = "pruefung"; } renderAll();
@@ -2108,7 +2140,8 @@ async function startExamDialog(kid0) {
     box.append(kids.length > 1 ? h("div", null, h("label", { class: "f" }, "Für"), ks) : null, h("div", null, h("label", { class: "f" }, "Mappe"), sel), h("div", null, h("label", { class: "f" }, "Richtung"), dir),
       h("div", null, h("label", { class: "f" }, "Tags der Prüfung (mindestens eines)"), h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e)))), info,
       h("div", null, h("label", { class: "f" }, "Zeit pro Vokabel (5 bis 20 Sekunden)"), secs),
-      h("p", { class: "muted", style: "margin:0" }, "Die Person sieht immer nur eine Vokabel. Ist die Zeit um, wird die Eingabe gesperrt und es geht automatisch weiter. Keine Tipps, keine Wiederholung. Bestanden nur mit 100 % richtigen Antworten."),
+      h("div", null, h("label", { class: "f" }, "Bestehensgrenze (Prozent richtig, 50 bis 100)"), passIn),
+      h("p", { class: "muted", style: "margin:0" }, "Die Person sieht immer nur eine Vokabel. Ist die Zeit um, wird die Eingabe gesperrt und es geht automatisch weiter. Keine Tipps, keine Wiederholung."),
       h("div", { class: "row" }, h("button", { class: "btn parent", onclick: go }, "Prüfung starten"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
   });
 }
@@ -2205,35 +2238,6 @@ const asgSig = () => Object.values(S.asgs).map(a => [a.id, a.doneAt, a.redeemed,
 const ptsSig = () => Object.values(S.pts).map(p => [p.kid, (p.ev || []).length, JSON.stringify(p.old)]);
 
 /* Punktekonto je Person: Liste einzelner Ereignisse [id, Zeit, Kategorie 1-3, Punkte, Text]; old = Summe älterer, zusammengefasster Ereignisse je Kategorie */
-function normPts(p, kid) {
-  const ev = (p && Array.isArray(p.ev) ? p.ev : []).filter(e => Array.isArray(e) && typeof e[0] === "string" && [1, 2, 3].includes(e[2]) && Number.isFinite(+e[1]) && Number.isFinite(+e[3]))
-    .map(e => [String(e[0]).slice(0, 60), +e[1], e[2], Math.max(0, Math.min(100, Math.round(+e[3]))), String(e[4] || "").slice(0, 60)]);
-  const o = p && Array.isArray(p.old) ? p.old : [];
-  return { kid, ev, old: [0, 1, 2].map(i => Math.max(0, Math.round(+o[i] || 0))) };
-}
-function prunePts(p) {
-  if (p.ev.length <= 800) return p;
-  p.ev.sort((a, b) => a[1] - b[1]);
-  p.ev.splice(0, p.ev.length - 600).forEach(e => { p.old[e[2] - 1] += e[3]; });
-  return p;
-}
-function mergePts(a, b, kid) {
-  const x = normPts(a, kid), y = normPts(b, kid), m = new Map();
-  [...x.ev, ...y.ev].forEach(e => { if (!m.has(e[0])) m.set(e[0], e); });
-  return prunePts({ kid, ev: [...m.values()].sort((p, q) => p[1] - q[1]), old: [0, 1, 2].map(i => Math.max(x.old[i], y.old[i])) });
-}
-function ptsOf(kid) {
-  const p = normPts(S.pts[kid], kid), by = { 1: p.old[0], 2: p.old[1], 3: p.old[2] };
-  p.ev.forEach(e => { by[e[2]] += e[3]; });
-  return { total: by[1] + by[2] + by[3], by, ev: p.ev.slice().sort((a, b) => b[1] - a[1]) };
-}
-async function awardPoints(kid, id, cat, pts, label) {
-  if (!pts) return false;
-  const cur = normPts(S.pts[kid], kid);
-  if (cur.ev.some(e => e[0] === id)) return false;                    /* gleiche Übung nie zweimal werten */
-  cur.ev.push([id, Date.now(), cat, pts, String(label || "").slice(0, 60)]);
-  prunePts(cur); await wset("pts/" + kid, cur); S.pts[kid] = cur; return true;
-}
 
 /* Aufträge: reqs = Positionen (Übung/Prüfung, Mappe, Tags, Anzahl, Mindest-%), prog = erledigte Läufe je Position (Lauf-IDs, damit Zusammenführen nichts doppelt zählt) */
 const asgOf = kid => Object.values(S.asgs).filter(a => a.kid === kid).sort((x, y) => (x.doneAt ? 1 : 0) - (y.doneAt ? 1 : 0) || y.created - x.created);
@@ -2244,7 +2248,7 @@ function cleanAsg(a) {
   if (!a || typeof a !== "object") return null;
   const str = (x, n) => String(x == null ? "" : x).slice(0, n), pos = x => (Number.isFinite(+x) && +x > 0) ? Math.round(+x) : null;
   const reqs = (Array.isArray(a.reqs) ? a.reqs : []).slice(0, 12).filter(r => r && typeof r === "object").map(r => ({ id: str(r.id, 20), type: r.type === "pruef" ? "pruef" : "ueb", lang: str(r.lang, 40), langName: str(r.langName, 60),
-    dir: cleanDir(r.dir), secs: cleanSecs(r.secs), flt: { s: str(r.flt && r.flt.s, 40), k: str(r.flt && r.flt.k, 40), l: str(r.flt && r.flt.l, 40) },
+    dir: cleanDir(r.dir), secs: cleanSecs(r.secs), flt: { s: str(r.flt && r.flt.s, 40), k: str(r.flt && r.flt.k, 40), l: str(r.flt && r.flt.l, 200) },
     count: Math.max(1, Math.min(50, Math.round(+r.count || 1))), minPct: Math.max(0, Math.min(100, Math.round(+r.minPct || 0))), tips: !!r.tips })).filter(r => r.id && r.lang);
   const prog = {}; if (a.prog && typeof a.prog === "object") reqs.forEach(r => { const l = a.prog[r.id]; if (Array.isArray(l)) prog[r.id] = [...new Set(l.map(x => str(x, 60)))].slice(-200); });
   const id = str(a.id, 40), kid = str(a.kid, 40); if (!id || !kid || !reqs.length) return null;
@@ -2262,6 +2266,7 @@ async function mergeFromPackage(pkg, ids) {
   for (const a of Object.values(S.asgs)) if (ids.includes(a.kid) && !keep.has(a.id)) { await wdelete("asg/" + a.id); delete S.asgs[a.id]; }   /* Der Administrator hat ihn gelöscht */
   for (const a of inc) { const cur = S.asgs[a.id], m = cur ? mergeAsg(cur, a) : (asgComplete(a) && !a.doneAt ? { ...a, doneAt: Date.now() } : a); await wset("asg/" + m.id, m); S.asgs[m.id] = m; }
   if (pkg.pts && typeof pkg.pts === "object") for (const id of ids) if (pkg.pts[id]) { const m = mergePts(S.pts[id], pkg.pts[id], id); await wset("pts/" + id, m); S.pts[id] = m; }
+  if (pkg.chap && typeof pkg.chap === "object") for (const id of ids) if (pkg.chap[id]) { const m = mergeChap(S.chap[id], pkg.chap[id], id); await wset("chap/" + id, m); S.chap[id] = m; }
 }
 async function creditAsg(ref, runId, pct) {
   const a = S.asgs[ref.id]; if (!a) return;
@@ -2273,6 +2278,7 @@ async function creditAsg(ref, runId, pct) {
   n.prog[rq.id] = list.slice(-200);
   if (!n.doneAt && asgComplete(n)) n.doneAt = Date.now();
   await wset("asg/" + a.id, n); S.asgs[a.id] = n;
+  if (!a.doneAt && n.doneAt) celebrate({ kind: "asg", kid: a.kid, main: a.title, sub: a.reward ? "Belohnung: " + a.reward : "", ms: a.reward ? 4600 : 3600 });
 }
 async function startAssigned(aid, rid) {
   if (S.busy) return;
@@ -2291,7 +2297,7 @@ async function startAssigned(aid, rid) {
       if (!items.length) { toast("Dazu gibt es keine Vokabeln mehr. Bitte den Administrator fragen."); S.busy = false; renderAll(); return; }
       if (items.length > EXAM_MAX) { toast("Die Prüfung hat zu viele Vokabeln. Bitte den Administrator fragen."); S.busy = false; renderAll(); return; }
       for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: rq.lang, langName: rq.langName || ((S.settings.langs.find(l => l.id === rq.lang) || {}).name || ""), dir: rq.dir, flt: rq.flt, created: Date.now(), logged: false, asg: ref, secs: cleanSecs(rq.secs), pos: 0, pstart: null, items };
+      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang: rq.lang, langName: rq.langName || ((S.settings.langs.find(l => l.id === rq.lang) || {}).name || ""), dir: rq.dir, flt: rq.flt, created: Date.now(), logged: false, asg: ref, secs: cleanSecs(rq.secs), pass: rq.minPct > 0 ? rq.minPct : 100, pos: 0, pstart: null, items };
       await wset("exam/" + kid, exam); S.exams[kid] = exam; S.tab = "lernen"; S.mode = "pruefung"; toast("Prüfung gestartet. Viel Erfolg!");
     }
   } catch (e) { toastErr(e, "Der Start hat nicht geklappt."); }
@@ -2315,27 +2321,6 @@ function asgCard(a) {
   if (done) c.append(h("div", { class: "banner open" }, a.redeemed ? "Belohnung eingelöst." : "Geschafft!" + (a.reward ? " Zeig das dem Administrator, dann bekommst du: " + a.reward + "." : "")));
   return c;
 }
-function zieleView() {
-  const w = h("div", { class: "stack" });
-  if (!S.kid) { w.append(h("div", { class: "banner warn" }, "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“.")); return w; }
-  const kid = S.kid, p = ptsOf(kid), lv = levelOf(p.total);
-  w.append(h("div", { class: "card stack" },
-    h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
-      h("div", null, h("h2", null, "Level " + lv.lv + " · " + lv.name), h("div", { class: "muted" }, (multiKids() ? kidName(kid) + ": " : "") + "Punktekonto")),
-      h("span", { style: "font-size:40px;font-weight:800;line-height:1", "aria-label": p.total + " Punkte" }, p.total)),
-    pbar(Math.round(100 * lv.into / lv.step)),
-    h("div", { class: "muted" }, "Noch " + (lv.step - lv.into) + " Punkte bis Level " + (lv.lv + 1) + "."),
-    h("div", { class: "row" }, [1, 2, 3].map(c => h("span", { class: "pill n" }, PCAT[c] + ": " + p.by[c]))),
-    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es ab " + PT.min + " % richtig: " + PT.own + " Punkt für eine eigene Übung, " + PT.asg + " Punkte für eine Übung aus einer Aufgabe oder einem Auftrag vom Administrator, " + PT.exam + " Punkte für eine Prüfung. Dieselben Vokabeln noch einmal zu wiederholen bringt keine Punkte.")));
-  w.append(h("h3", null, "Aufträge"));
-  const list = asgOf(kid);
-  if (!list.length) w.append(h("div", { class: "empty" }, "Noch keine Aufträge. Der Administrator kann dir Tages- oder Wochenaufträge geben."));
-  list.forEach(a => w.append(asgCard(a)));
-  if (p.ev.length) w.append(h("details", { class: "card" }, h("summary", { style: "cursor:pointer;font-weight:600" }, "Letzte Punkte"),
-    h("div", { class: "stack", style: "margin-top:10px" }, p.ev.slice(0, 20).map(e => h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap;border-top:1px solid var(--line);padding-top:8px" },
-      h("div", null, h("b", null, "+" + e[3]), " " + PCAT[e[2]], h("div", { class: "muted" }, fmtShort(e[1]) + (e[4] ? " · " + e[4] : ""))))))));
-  return w;
-}
 
 /* ---- Administrator: Aufträge anlegen, Belohnung als eingelöst markieren ---- */
 async function asgDialog(kid0) {
@@ -2355,7 +2340,7 @@ async function asgDialog(kid0) {
       const type = h("select", { "aria-label": "Art" }, h("option", { value: "ueb" }, "Übung (je " + QCOUNT + " Vokabeln)"), h("option", { value: "pruef" }, "Prüfung (alle passenden Vokabeln)"));
       const sel = h("select", { "aria-label": "Mappe" }, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
       const dir = dirSelect(cfg.dir, "Richtung");
-      const fs = fltSelects(sel.value, {});
+      const fs = fltSelectsX(sel.value, {});
       const secs = secSelect(10), secsBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Zeit pro Vokabel (5 bis 20 Sekunden)"), secs);
       const count = h("input", { type: "number", min: 1, max: 50, value: 1, inputmode: "numeric", "aria-label": "Anzahl" });
       const minPct = h("input", { type: "number", min: 0, max: 100, value: 0, inputmode: "numeric", "aria-label": "Mindestens Prozent richtig" });
@@ -2368,7 +2353,7 @@ async function asgDialog(kid0) {
       const row = { type, sel, dir, fs, count, minPct, secs, wrap };
       const rm = h("button", { class: "btn sec small", type: "button", onclick: () => { if (rows.length < 2) { toast("Ein Auftrag braucht mindestens eine Position."); return; } rows.splice(rows.indexOf(row), 1); wrap.remove(); } }, "Position entfernen");
       wrap.append(h("b", null, "Position"), h("label", { class: "f" }, "Art der Position: Übung oder Prüfung"), type, sel, dir, h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e))),
-        h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Anzahl"), count), h("div", { class: "grow" }, h("label", { class: "f" }, "Mindestens % richtig (0 = egal)"), minPct)), secsBox, info, rm);
+        h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Anzahl"), count), h("div", { class: "grow" }, h("label", { class: "f" }, "Mindestens % richtig (Prüfung: Bestehensgrenze)"), minPct)), secsBox, info, rm);
       rows.push(row); reqBox.append(wrap);
     };
     addRow();
@@ -2427,10 +2412,11 @@ function asgAdminCard() {
   const c = h("div", { class: "card stack" }, h("h2", null, "Aufträge, Belohnungen & Punkte"),
     h("p", { class: "muted", style: "margin:0" }, "Tages- oder Wochenaufträge mit mehreren Lektionen und Prüfungen, je mit Anzahl und optional einer Belohnung. Die Person startet die Übungen selbst im Bereich „Ziele“ und sammelt dort Punkte."),
     h("button", { class: "btn parent", disabled: !S.canWrite, onclick: () => asgDialog() }, "Neuen Auftrag erstellen …"));
+  c.append(chapSettingsRow());
   kidsOf().forEach(k => {
-    const list = asgOf(k.id), p = ptsOf(k.id), lv = levelOf(p.total);
+    const list = asgOf(k.id), p = ptsOf(k.id), li = levelInfo(k.id);
     c.append(h("div", { class: "stack", style: "padding-top:12px;border-top:1px solid var(--line)" },
-      h("div", null, h("b", null, k.name), h("div", { class: "muted" }, p.total + " Punkte · Level " + lv.lv + " (" + lv.name + ") · Eigene " + p.by[1] + ", Aufgaben " + p.by[2] + ", Prüfungen " + p.by[3])),
+      h("div", null, h("b", null, k.name), h("div", { class: "muted" }, p.total + " Punkte · " + fullTitle(li.lt, li.la) + " (Faktor " + fmtF(li.f) + ") · 100 %-Prüfungen " + p.perf + " · Eigene " + p.by[1] + ", Aufgaben " + p.by[2] + ", Prüfungen " + p.by[3])),
       ...(list.length ? list.map(asgAdminRow) : [h("div", { class: "muted" }, "Keine Aufträge.")])));
   });
   return c;
@@ -2497,9 +2483,378 @@ async function examAdvance(auto) {
   const nx = document.getElementById("xin"); if (nx && !nx.disabled && !auto) nx.focus();
 }
 
+/* ------------------------------------------------------------------ Mehrere Lektionen wählen (Prüfungen und Aufträge) */
+function fltSelectsX(lang, init) {
+  const base = fltSelects(lang, init || {}), sSel = base.els[0], kSel = base.els[1];
+  let lg = lang, chosen = new Set(String((init && init.l) || "").split("|").filter(v => v && v !== "-"));
+  const sum = h("summary", { style: "cursor:pointer" }), list = h("div", { class: "stack", style: "gap:8px;margin-top:10px;max-height:240px;overflow:auto" });
+  const box = h("details", { class: "lessonpick", style: "border:1px solid var(--line);border-radius:12px;padding:10px 12px" }, sum, list);
+  const fire = () => box.dispatchEvent(new Event("input", { bubbles: true }));
+  const label = () => { const a = [...chosen].sort(natCmp); sum.textContent = a.length ? (a.length === 1 ? "Lektion " : "Lektionen ") + a.join(", ") : "Lektion: alle"; };
+  const fill = () => {
+    const vals = tagValues(lg)[2]; chosen = new Set([...chosen].filter(v => vals.includes(v)));
+    list.replaceChildren(h("div", { class: "row" }, h("button", { type: "button", class: "btn sec small", onclick: () => { chosen.clear(); fill(); fire(); } }, "Auswahl aufheben (= alle)")),
+      ...vals.map(v => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" },
+        h("input", { type: "checkbox", checked: chosen.has(v), style: "width:22px;height:22px;min-height:0;flex:none", onchange: e => { if (e.target.checked) chosen.add(v); else chosen.delete(v); label(); fire(); } }), h("span", null, "Lektion " + v))));
+    label();
+  };
+  fill();
+  return { els: [sSel, kSel, box], get: () => ({ s: sSel.value, k: kSel.value, l: [...chosen].sort(natCmp).join("|") }),
+    refill: l2 => { lg = l2; base.refill(l2); fill(); },
+    set: (f, l2) => { chosen = new Set(String((f && f.l) || "").split("|").filter(v => v && v !== "-")); base.set(f || {}, l2); lg = l2; fill(); } };
+}
+
+/* ------------------------------------------------------------------ Profil je Person, Level (Titel + Adjektiv), Kapitel-Rating */
+const LVL_P = [0, 50, 150, 250, 350, 500, 650, 800, 950, 1100, 1300, 1500, 1700, 1900, 2100];      /* Titel: Punkte ab Level 1 bis 15 (Referenz: Faktor 1,0) */
+const LVL_E = [0, 10, 30, 50, 70, 100, 130, 160, 190, 220, 260, 300, 340, 380, 420];               /* Adjektiv: Prüfungen mit 100 % */
+const SJ_REF = 16;                                                                                  /* Referenz: Gymnasium bis 13, 2 Sprachen (9 + 7 Sprachjahre) */
+const TITLES = [["Starter", "m"], ["Entdecker", "m"], ["Wortsammler", "m"], ["Vokabeljäger", "m"], ["Vokabelprofi", "m"], ["Sprachkünstler", "m"], ["Grammatik-Ninja", "m"], ["Wörterbuch auf Beinen", "n"],
+  ["Meister", "m"], ["Sprachgenie", "n"], ["Vokabel-Zauberer", "m"], ["Lexikon-Flüsterer", "m"], ["Cicero 2.0", "m"], ["Legende", "f"], ["Babel-Bezwinger", "m"]];
+const ADJ = ["harmlos", "ordentlich", "pingelig", "makellos", "streberhaft", "fehlerallergisch", "unbestechlich", "überqualifiziert", "verdächtig", "unausstehlich", "unverschämt", "größenwahnsinnig", "unfehlbar", "übermenschlich", "allmächtig"];
+const SA_LABEL = { Haupt: "Hauptschule", Real: "Realschule", Gym: "Gymnasium" }, SA_MAXK = { Haupt: 9, Real: 10, Gym: 13 };
+const kidObj = kid => kidsOf().find(k => k.id === kid);
+const langName = id => ((S.settings.langs || []).find(l => l.id === id) || {}).name || "";
+const profOn = k => !!(k && k.prof && k.prof.sa && Array.isArray(k.prof.langs) && k.prof.langs.some(l => ((S.settings && S.settings.langs) || []).some(x => x.id === l.id)));
+function cleanProf(p) {
+  if (!p || typeof p !== "object") return null;
+  const sa = SCHULARTEN.includes(p.sa) ? p.sa : "";
+  const langs = (Array.isArray(p.langs) ? p.langs : []).slice(0, 20).map(l => ({ id: String((l && l.id) || "").slice(0, 40), from: Math.max(1, Math.min(13, Math.round(+(l && l.from)) || 5)) })).filter(l => l.id);
+  if (!sa || !langs.length) return null;
+  return { sa, maxK: Math.max(5, Math.min(13, Math.round(+p.maxK) || SA_MAXK[sa])), langs, extra: (Array.isArray(p.extra) ? p.extra : []).filter(x => SCHULARTEN.includes(x) && x !== sa) };
+}
+function allowedLangs(kid) { const k = kidObj(kid), all = S.settings.langs || []; if (!profOn(k)) return all; const ids = new Set(k.prof.langs.map(x => x.id)); return all.filter(l => ids.has(l.id)); }
+function saOk(kid, sa) { const k = kidObj(kid); if (!profOn(k) || !sa) return true; return sa === k.prof.sa || (k.prof.extra || []).includes(sa); }
+const visWords = (lang, kid) => (S.vocab[lang] || []).filter(w => saOk(kid, tg(w)[0]));
+const sjOf = prof => prof.langs.reduce((n, l) => n + Math.max(1, prof.maxK - l.from + 1), 0);
+const factorOf = prof => Math.max(0.2, sjOf(prof) / SJ_REF);
+const profFactor = kid => { const k = kidObj(kid); return profOn(k) ? factorOf(k.prof) : 1; };
+function thresholds(base, f, step) { const out = [0]; for (let i = 1; i < base.length; i++) { let v = Math.max(step, Math.round(base[i] * f / step) * step); if (v <= out[i - 1]) v = out[i - 1] + step; out.push(v); } return out; }
+const fmtF = f => f.toFixed(2).replace(".", ",");
+function profLabel(k) {
+  const p = k.prof; if (!profOn(k)) return "";
+  return (SA_LABEL[p.sa] || p.sa) + " bis Klasse " + p.maxK + " · " + p.langs.map(l => langName(l.id) + " ab " + l.from).join(", ") + (p.extra.length ? " · zusätzlich " + p.extra.map(x => SA_LABEL[x] || x).join(", ") : "");
+}
+
+/* Punktekonto: Ereignisse [id, Zeit, Kategorie, Punkte, Text]. Kategorie 1 bis 3 = Punkte, 4 = Prüfung mit 100 % (zählt für das Adjektiv). lv = höchste erreichte Level (sinken nie). */
+function normPts(p, kid) {
+  const ev = (p && Array.isArray(p.ev) ? p.ev : []).filter(e => Array.isArray(e) && typeof e[0] === "string" && [1, 2, 3, 4].includes(e[2]) && Number.isFinite(+e[1]) && Number.isFinite(+e[3]))
+    .map(e => [String(e[0]).slice(0, 60), +e[1], e[2], e[2] === 4 ? 0 : Math.max(0, Math.min(100, Math.round(+e[3]))), String(e[4] || "").slice(0, 60)]);
+  const o = p && Array.isArray(p.old) ? p.old : [], l = p && Array.isArray(p.lv) ? p.lv : [];
+  return { kid, ev, old: [0, 1, 2, 3].map(i => Math.max(0, Math.round(+o[i] || 0))), lv: [0, 1].map(i => Math.max(1, Math.min(15, Math.round(+l[i] || 1)))) };
+}
+function prunePts(p) {
+  if (p.ev.length <= 800) return p;
+  p.ev.sort((a, b) => a[1] - b[1]);
+  p.ev.splice(0, p.ev.length - 600).forEach(e => { p.old[e[2] - 1] += e[2] === 4 ? 1 : e[3]; });
+  return p;
+}
+function mergePts(a, b, kid) {
+  const x = normPts(a, kid), y = normPts(b, kid), m = new Map();
+  [...x.ev, ...y.ev].forEach(e => { if (!m.has(e[0])) m.set(e[0], e); });
+  return prunePts({ kid, ev: [...m.values()].sort((p, q) => p[1] - q[1]), old: [0, 1, 2, 3].map(i => Math.max(x.old[i], y.old[i])), lv: [0, 1].map(i => Math.max(x.lv[i], y.lv[i])) });
+}
+function ptsOf(kid) {
+  const p = normPts(S.pts[kid], kid), by = { 1: p.old[0], 2: p.old[1], 3: p.old[2] }; let perf = p.old[3];
+  p.ev.forEach(e => { if (e[2] === 4) perf++; else by[e[2]] += e[3]; });
+  return { total: by[1] + by[2] + by[3], by, perf, lv: p.lv, ev: p.ev.filter(e => e[2] !== 4).sort((a, b) => b[1] - a[1]) };
+}
+function fullTitle(lt, la) { const [t, g] = TITLES[lt - 1], a = ADJ[la - 1]; return a.charAt(0).toUpperCase() + a.slice(1) + (g === "f" ? "e" : g === "n" ? "es" : "er") + " " + t; }
+function levelInfo(kid) {
+  const f = profFactor(kid), tp = thresholds(LVL_P, f, 5), te = thresholds(LVL_E, f, 1), p = ptsOf(kid);
+  const calc = (thr, v) => { let l = 1; for (let i = 1; i < thr.length; i++) if (v >= thr[i]) l = i + 1; return l; };
+  const lt = Math.max(calc(tp, p.total), p.lv[0]), la = Math.max(calc(te, p.perf), p.lv[1]);
+  const prog = (thr, lv, v) => lv >= thr.length ? null : { left: Math.max(0, thr[lv] - v), pct: Math.max(0, Math.min(100, Math.round(100 * (v - thr[lv - 1]) / (thr[lv] - thr[lv - 1])))) };
+  return { f, tp, te, total: p.total, perf: p.perf, by: p.by, lt, la, tProg: prog(tp, lt, p.total), aProg: prog(te, la, p.perf) };
+}
+async function bumpLevels(kid, announce) {
+  const info = levelInfo(kid), cur = normPts(S.pts[kid], kid);
+  if (info.lt <= cur.lv[0] && info.la <= cur.lv[1]) return;
+  cur.lv = [Math.max(cur.lv[0], info.lt), Math.max(cur.lv[1], info.la)];
+  await wset("pts/" + kid, cur); S.pts[kid] = cur;
+  if (announce && !celebrate({ kind: "level", kid, main: fullTitle(info.lt, info.la), sub: "Titel-Level " + info.lt + " · Adjektiv-Level " + info.la })) toast("Level-Up! Du bist jetzt: " + fullTitle(info.lt, info.la));
+}
+async function awardPoints(kid, id, cat, pts, label) {
+  if (!pts && cat !== 4) return false;
+  const cur = normPts(S.pts[kid], kid);
+  if (cur.ev.some(e => e[0] === id)) return false;                    /* gleiche Übung nie zweimal werten */
+  cur.ev.push([id, Date.now(), cat, pts, String(label || "").slice(0, 60)]);
+  prunePts(cur); await wset("pts/" + kid, cur); S.pts[kid] = cur;
+  await bumpLevels(kid, true); return true;
+}
+
+/* Kapitel-Rating: 0 bis 6 Sterne = Übungen in Folge mit 100 % im selben Kapitel (Schulart + Klasse + Lektion) */
+const chapPass = () => { const v = Math.round(+S.settings.chapPass); return v >= 50 && v <= 100 ? v : 95; };
+const chapSecs = () => S.settings.chapSecs == null ? 15 : cleanSecs(S.settings.chapSecs);
+const encK = x => encodeURIComponent(x).replace(/\./g, "%2E");
+const chapKey = (lang, t) => [lang, t[0] || "", t[1] || "", t[2] || ""].map(encK).join("|");
+const chapParts = key => key.split("|").map(decodeURIComponent);
+const starsText = n => "★".repeat(n) + "☆".repeat(6 - n);
+function normChap(d, kid) {
+  const c = {}, src = d && d.c && typeof d.c === "object" ? d.c : {};
+  Object.keys(src).slice(0, 300).forEach(k => {
+    const e = src[k] || {};
+    const r = (Array.isArray(e.r) ? e.r : []).filter(x => Array.isArray(x) && typeof x[0] === "string" && Number.isFinite(+x[1])).map(x => [String(x[0]).slice(0, 60), +x[1], x[2] ? 1 : 0]).sort((a, b) => a[1] - b[1]).slice(-12);
+    c[String(k).slice(0, 200)] = { r, p: Number.isFinite(+e.p) && +e.p > 0 ? +e.p : null };
+  });
+  return { kid, c };
+}
+function mergeChap(a, b, kid) {
+  const x = normChap(a, kid), y = normChap(b, kid), c = {};
+  new Set([...Object.keys(x.c), ...Object.keys(y.c)]).forEach(k => {
+    const ex = x.c[k] || { r: [], p: null }, ey = y.c[k] || { r: [], p: null }, m = new Map();
+    [...ex.r, ...ey.r].forEach(r => { if (!m.has(r[0])) m.set(r[0], r); });
+    c[k] = { r: [...m.values()].sort((p, q) => p[1] - q[1]).slice(-12), p: Math.max(ex.p || 0, ey.p || 0) || null };
+  });
+  return { kid, c };
+}
+function remapChapLang(d, f) { const c = {}; Object.keys(d.c).forEach(k => { const p = chapParts(k); p[0] = f(p[0]); c[p.map(encK).join("|")] = d.c[k]; }); return { ...d, c }; }
+function chapState(kid, key) {
+  const e = normChap(S.chap[kid], kid).c[key]; if (!e) return { stars: 0, ready: false, master: false };
+  const runs = e.r.filter(x => !e.p || x[1] > e.p); let n = 0;
+  for (let i = runs.length - 1; i >= 0 && runs[i][2] === 1; i--) n++;
+  return { stars: Math.min(6, n), ready: n >= 6, master: !!e.p };
+}
+async function recordChapRun(kid, t, pct) {
+  const ws = S.vocab[t.lang] || []; let key = null;
+  for (const it of t.items) {                                           /* nur Übungen, deren Vokabeln alle aus demselben Kapitel stammen */
+    const ix = wordIdx(t.lang, it); if (ix < 0) return;
+    const tt = tg(ws[ix]); if (!(tt[0] || tt[1] || tt[2])) return;
+    const k2 = chapKey(t.lang, tt); if (key === null) key = k2; else if (key !== k2) return;
+  }
+  if (key === null) return;
+  const cur = normChap(S.chap[kid], kid), e = cur.c[key] || { r: [], p: null }, id = "t" + t.created;
+  if (e.r.some(x => x[0] === id)) return;
+  const was = chapState(kid, key).ready;
+  e.r.push([id, Date.now(), pct + 1e-9 >= 100 ? 1 : 0]); e.r = e.r.slice(-12); cur.c[key] = e;
+  await wset("chap/" + kid, cur); S.chap[kid] = cur;
+  if (!was && chapState(kid, key).ready) toast("Kapitelprüfung freigeschaltet: " + tagText(chapParts(key).slice(1)) + "!");
+}
+async function recordChapPass(kid, key, ts) {
+  const cur = normChap(S.chap[kid], kid), e = cur.c[key] || { r: [], p: null };
+  if (e.p && e.p >= ts) return;
+  e.p = ts; cur.c[key] = e; await wset("chap/" + kid, cur); S.chap[kid] = cur;
+  celebrate({ kind: "chap", kid, main: langName(chapParts(key)[0]) + " · " + tagText(chapParts(key).slice(1)), sub: "Kapitelprüfung bestanden" });
+}
+function readyChapters(kid) {
+  const out = [];
+  Object.keys(normChap(S.chap[kid], kid).c).forEach(key => {
+    if (!chapState(kid, key).ready) return;
+    const [lang, s, k, l] = chapParts(key), t = [s, k, l];
+    if (!allowedLangs(kid).some(x => x.id === lang) || !saOk(kid, s)) return;
+    if (!examWords(lang, { s: s || "-", k: k || "-", l: l || "-" }).length) return;
+    out.push({ key, lang, t });
+  });
+  return out;
+}
+async function startChapterExam(kid, lang, t) {
+  if (S.busy) return;
+  const run = S.exams[kid];
+  if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung ersetzen?", "Die bisherigen Antworten in der laufenden Prüfung gehen verloren.", "Neue Prüfung starten", true))) return;
+  const dir = S.hdir[kid] || cfgOf(kid).dir || "f2d";
+  const items = examWords(lang, { s: t[0] || "-", k: t[1] || "-", l: t[2] || "-" }).map(({ w, n }) => ({ n, f: w.f, d: w.d, ...qa(w, dir), a: "", ok: null }));
+  if (!items.length) { toast("Zu diesem Kapitel gibt es keine Vokabeln."); return; }
+  if (items.length > EXAM_MAX) { toast("Das Kapitel ist für eine Prüfung zu groß. Bitte den Administrator fragen."); return; }
+  for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+  S.busy = true;
+  try {
+    const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang, langName: langName(lang), dir, flt: { s: t[0] || "", k: t[1] || "", l: t[2] || "" }, created: Date.now(), logged: false, chap: chapKey(lang, t), pass: chapPass(), secs: chapSecs(), pos: 0, pstart: null, items };
+    await wset("exam/" + kid, exam); S.exams[kid] = exam; S.tab = "lernen"; S.mode = "pruefung"; toast("Kapitelprüfung gestartet. Viel Erfolg!");
+  } catch (e) { toastErr(e, "Die Prüfung konnte nicht gestartet werden."); }
+  S.busy = false; renderAll(); window.scrollTo(0, 0);
+}
+const chapSig = () => JSON.stringify(S.chap);
+const readyCard = (r, kid) => h("div", { class: "card stack chapr" }, h("b", null, "Kapitelprüfung bereit: " + langName(r.lang) + " · " + tagText(r.t)),
+  h("div", { class: "muted" }, "6 Übungen in Folge mit 100 %. Bestanden ab " + chapPass() + " %" + (chapSecs() ? ", " + chapSecs() + " Sekunden pro Vokabel." : ".")),
+  h("button", { class: "btn", style: "background:var(--ok)", disabled: S.busy || !S.canWrite, onclick: () => startChapterExam(kid || S.kid, r.lang, r.t) }, "Kapitelprüfung starten"));
+
+/* ---- Bereich „Ziele“ (Person) ---- */
+function zieleView() {
+  const w = h("div", { class: "stack" });
+  if (!S.kid) { w.append(h("div", { class: "banner warn" }, "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“.")); return w; }
+  const kid = S.kid, p = ptsOf(kid), li = levelInfo(kid), k = kidObj(kid);
+  w.append(h("div", { class: "card stack" },
+    h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
+      h("div", null, h("h2", null, fullTitle(li.lt, li.la)), h("div", { class: "muted" }, (multiKids() ? kidName(kid) + " · " : "") + "Titel-Level " + li.lt + " von 15 · Adjektiv-Level " + li.la + " von 15")),
+      h("span", { style: "font-size:40px;font-weight:800;line-height:1", "aria-label": p.total + " Punkte" }, p.total)),
+    h("div", { class: "muted" }, "Punkte"), pbar(li.tProg ? li.tProg.pct : 100),
+    h("div", { class: "muted" }, li.tProg ? "Noch " + li.tProg.left + " Punkte bis zum Titel „" + TITLES[li.lt][0] + "“." : "Höchster Titel erreicht."),
+    h("div", { class: "muted", style: "margin-top:4px" }, "Prüfungen mit 100 %: " + li.perf), pbar(li.aProg ? li.aProg.pct : 100),
+    h("div", { class: "muted" }, li.aProg ? "Noch " + li.aProg.left + (li.aProg.left === 1 ? " perfekte Prüfung" : " perfekte Prüfungen") + " bis zum Adjektiv „" + ADJ[li.la] + "“." : "Höchstes Adjektiv erreicht."),
+    h("div", { class: "row" }, [1, 2, 3].map(c => h("span", { class: "pill n" }, PCAT[c] + ": " + p.by[c]))),
+    animSwitch(kid),
+    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es ab " + PT.min + " % richtig: " + PT.own + " Punkt für eine eigene Übung, " + PT.asg + " Punkte für eine Übung aus einer Aufgabe oder einem Auftrag vom Administrator, " + PT.exam + " Punkte für eine Prüfung. Dieselben Vokabeln noch einmal zu wiederholen bringt keine Punkte."
+      + (profOn(k) ? " Dein Maßstab für die Level: Faktor " + fmtF(li.f) + " (" + profLabel(k) + "). Änderungen am Profil macht nur der Administrator." : ""))));
+  w.append(legendCard(kid, li));
+  const rc = readyChapters(kid);
+  if (rc.length) { w.append(h("h3", null, "Kapitelprüfungen")); rc.forEach(r => w.append(readyCard(r, kid))); }
+  w.append(h("h3", null, "Aufträge"));
+  const list = asgOf(kid);
+  if (!list.length) w.append(h("div", { class: "empty" }, "Noch keine Aufträge. Der Administrator kann dir Tages- oder Wochenaufträge geben."));
+  list.forEach(a => w.append(asgCard(a)));
+  if (p.ev.length) w.append(h("details", { class: "card" }, h("summary", { style: "cursor:pointer;font-weight:600" }, "Letzte Punkte"),
+    h("div", { class: "stack", style: "margin-top:10px" }, p.ev.slice(0, 20).map(e => h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap;border-top:1px solid var(--line);padding-top:8px" },
+      h("div", null, h("b", null, "+" + e[3]), " " + PCAT[e[2]], h("div", { class: "muted" }, fmtShort(e[1]) + (e[4] ? " · " + e[4] : ""))))))));
+  return w;
+}
+
+/* ---- Administrator: Profil je Person, Einstellungen Kapitelprüfung ---- */
+function chapSettingsRow() {
+  const pass = h("input", { type: "number", min: 50, max: 100, value: chapPass(), inputmode: "numeric", "aria-label": "Bestehensgrenze Kapitelprüfung" }), secs = secSelect(chapSecs());
+  const save = async () => {
+    const p = Math.round(+pass.value); if (!(p >= 50 && p <= 100)) { toast("Die Bestehensgrenze muss zwischen 50 und 100 liegen."); return; }
+    try { await wupdate("app/settings", { chapPass: p, chapSecs: cleanSecs(secs.value) }); toast("Gespeichert."); } catch (e) { toastErr(e); }
+  };
+  return h("div", { class: "stack", style: "padding-top:12px;border-top:1px solid var(--line)" }, h("b", null, "Kapitelprüfung (automatisch)"),
+    h("div", { class: "muted" }, "Wer ein Kapitel 6-mal in Folge mit 100 % geübt hat, kann die Prüfung dazu selbst starten, ohne dich."),
+    h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Bestehensgrenze (%)"), pass), h("div", { class: "grow" }, h("label", { class: "f" }, "Zeit pro Vokabel"), secs)),
+    h("button", { class: "btn parent small", disabled: !S.canWrite, onclick: save }, "Speichern"));
+}
+
+/* ------------------------------------------------------------------ Profil als Pflicht (von der Person selbst auszufüllen), Legende */
+const needProfile = kid => { const k = kidObj(kid); return !!(k && k.active !== false && !profOn(k) && !parentOn()); };
+function buildProfileForm(cur, o) {
+  const langs = S.settings.langs;
+  const chk = on => h("input", { type: "checkbox", checked: on, style: "width:22px;height:22px;min-height:0;flex:none" });
+  const sa = h("select", { "aria-label": "Schulart" }, h("option", { value: "" }, o.required ? "Bitte wählen …" : "Nicht eingerichtet (alles sichtbar)"), ...SCHULARTEN.map(x => h("option", { value: x }, SA_LABEL[x] || x)));
+  sa.value = cur ? cur.sa : "";
+  const maxK = h("input", { type: "number", min: 5, max: 13, inputmode: "numeric", value: cur ? cur.maxK : "", "aria-label": "Letzte Klasse" });
+  const lrows = langs.map(l => { const on = cur && cur.langs.find(x => x.id === l.id); return { l, cb: chk(!!on), from: h("input", { type: "number", min: 1, max: 13, inputmode: "numeric", value: on ? on.from : "", placeholder: "ab Klasse", "aria-label": "Startklasse " + l.name, style: "max-width:110px" }) }; });
+  const exRows = SCHULARTEN.map(x => ({ x, cb: chk(!!(cur && cur.extra.includes(x))) }));
+  const info = h("div", { class: "muted", "aria-live": "polite" }), msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
+  const read = () => {
+    if (!sa.value) return o.required ? { err: "Bitte wähle deine Schulart." } : { prof: null };
+    const mk = Math.round(+maxK.value); if (!(mk >= 5 && mk <= 13)) return { err: "Die letzte Klasse muss zwischen 5 und 13 liegen." };
+    const ls = [];
+    for (const r of lrows) if (r.cb.checked) { const f = Math.round(+r.from.value); if (!(f >= 1 && f <= 13)) return { err: "Bitte für " + r.l.name + " die Startklasse angeben (1 bis 13)." }; ls.push({ id: r.l.id, from: f }); }
+    if (!ls.length) return { err: "Bitte mindestens eine Sprache wählen." };
+    return { prof: { sa: sa.value, maxK: mk, langs: ls, extra: o.extra ? exRows.filter(r => r.cb.checked && r.x !== sa.value).map(r => r.x) : ((cur && cur.extra) || []).filter(x => x !== sa.value) } };
+  };
+  const preview = () => {
+    if (!o.preview) return;
+    const r = read();
+    if (!r.prof) { info.textContent = r.err || "Ohne Profil gilt der Faktor 1,00 und alle Vokabeln sind sichtbar."; return; }
+    const f = factorOf(r.prof), tp = thresholds(LVL_P, f, 5), te = thresholds(LVL_E, f, 1), pick = a => [1, 4, 9, 14].map(i => a[i]).join(" / ");
+    info.textContent = "Sprachjahre: " + sjOf(r.prof) + " · Faktor " + fmtF(f) + ". Punkte für Level 2 / 5 / 10 / 15: " + pick(tp) + ". Prüfungen mit 100 % dafür: " + pick(te) + ".";
+  };
+  sa.addEventListener("change", () => { if (sa.value) maxK.value = SA_MAXK[sa.value]; preview(); });
+  maxK.addEventListener("input", preview);
+  lrows.forEach(r => { r.cb.addEventListener("change", () => { if (r.cb.checked && !r.from.value) r.from.value = [5, 7, 9][Math.min(lrows.filter(x => x.cb.checked).length - 1, 2)]; preview(); }); r.from.addEventListener("input", preview); });
+  preview();
+  const nodes = [h("div", null, h("label", { class: "f" }, "Schulart"), sa), h("div", null, h("label", { class: "f" }, "Letzte Klasse (5 bis 13)"), maxK),
+    h("div", { class: "stack" }, h("label", { class: "f" }, "Sprachen und Startklasse"), ...lrows.map(r => h("div", { class: "row", style: "flex-wrap:nowrap;gap:12px" }, r.cb, h("span", { class: "grow" }, r.l.name), r.from)))];
+  if (o.extra) nodes.push(h("div", { class: "stack" }, h("label", { class: "f" }, "Zusätzlich freigegebene Schularten (zählen als Bonus, ohne den Maßstab zu erhöhen)"), ...exRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, SA_LABEL[r.x] || r.x)))));
+  return { read, info, msg, nodes };
+}
+async function profileDialog(k) {
+  if (!S.settings.langs.length) { toast("Bitte zuerst eine Sprache anlegen."); return; }
+  const cur = cleanProf(k.prof);
+  await modal("Profil: " + k.name, (box, close) => {
+    const f = buildProfileForm(cur, { extra: true, preview: true });
+    const go = async btn => {
+      const r = f.read(); if (r.err) { f.msg.textContent = r.err; return; }
+      f.msg.textContent = ""; btn.disabled = true;
+      try {
+        await bumpLevels(k.id, false);                     /* erreichte Level sichern, bevor sich der Maßstab ändert */
+        await wupdate("app/settings", { kids: kidsOf().map(x => { if (x.id !== k.id) return x; const { prof: _old, ...rest } = x; return r.prof ? { ...rest, prof: r.prof } : rest; }) });
+        close(true); toast("Profil gespeichert."); renderAll();
+      } catch (e) { btn.disabled = false; toastErr(e); }
+    };
+    box.append(h("p", { class: "muted", style: "margin:0" }, "Die Person füllt ihr Profil beim ersten Start selbst aus. Hier kannst du es ändern oder zusätzliche Schularten freigeben. Aus Schulart, letzter Klasse und Sprachen ergibt sich der Maßstab für die Level: Wer weniger Vokabeln lernen kann, braucht weniger Punkte."),
+      ...f.nodes, f.info, f.msg, h("div", { class: "row" }, h("button", { class: "btn parent", onclick: e => go(e.currentTarget) }, "Speichern"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
+  }, { sticky: true });
+}
+/* Pflichtabfrage: erscheint, solange die Person kein Profil hat (auch bei bisherigen Nutzern beim nächsten Start) */
+function profileGate(kid) {
+  const k = kidObj(kid), w = h("div", { class: "stack" });
+  if (!S.settings.langs.length) { w.append(h("div", { class: "banner warn" }, "Es sind noch keine Sprachen vorhanden. Bitte den Administrator fragen.")); return w; }
+  const f = buildProfileForm(null, { required: true, preview: false });
+  const go = async btn => {
+    const r = f.read(); if (r.err || !r.prof) { f.msg.textContent = r.err || "Bitte wähle deine Schulart."; return; }
+    if (!S.canWrite) { f.msg.textContent = "Mit diesem Zugang kann gerade nichts gespeichert werden."; return; }
+    f.msg.textContent = ""; btn.disabled = true;
+    try {
+      await wupdate("app/settings", { kids: kidsOf().map(x => x.id === kid ? { ...x, prof: r.prof } : x) });
+      toast("Danke! Dein Profil ist gespeichert."); renderAll(); window.scrollTo(0, 0);
+    } catch (e) { btn.disabled = false; toastErr(e, "Das Profil konnte nicht gespeichert werden."); }
+  };
+  w.append(h("div", { class: "card stack" }, h("h2", null, "Hallo, " + k.name + "! Zuerst dein Profil"),
+    h("p", { style: "margin:0" }, "Bitte fülle dieses Profil einmal aus. Danach geht es sofort weiter. So siehst du nur die Vokabeln, die zu dir passen, und deine Level werden fair berechnet."),
+    h("p", { class: "muted", style: "margin:0" }, "Letzte Klasse: bis zu welcher Klasse du an deiner Schulart bleibst (z. B. 10 an der Realschule). Startklasse: ab welcher Klasse du die Sprache hast. Spätere Änderungen macht nur der Administrator."),
+    ...f.nodes, f.msg, h("button", { class: "btn", onclick: e => go(e.currentTarget) }, "Profil speichern")));
+  return w;
+}
+
+/* ---- Legende (ausklappbar) unter „Ziele“ ---- */
+function legendCard(kid, li) {
+  const k = kidObj(kid), cur = { style: "font-weight:800;color:var(--blue)" };
+  const tbl = (head, rows) => h("div", { class: "scroll" }, h("table", { class: "v proto" }, h("thead", null, h("tr", null, head.map(x => h("th", null, x)))), h("tbody", null, rows)));
+  const tRows = TITLES.map((t, i) => { const c = i + 1 === li.lt ? cur : null; return h("tr", null, h("td", { class: "n", ...(c || {}) }, String(i + 1)), h("td", c, t[0]), h("td", { class: "s", ...(c || {}) }, String(li.tp[i]))); });
+  const aRows = ADJ.map((a, i) => { const c = i + 1 === li.la ? cur : null; return h("tr", null, h("td", { class: "n", ...(c || {}) }, String(i + 1)), h("td", c, a), h("td", { class: "s", ...(c || {}) }, String(li.te[i]))); });
+  return h("details", { class: "card" }, h("summary", { style: "cursor:pointer;font-weight:600" }, "Legende: Level, Titel und Adjektive"),
+    h("div", { class: "stack", style: "margin-top:10px" },
+      h("p", { class: "muted", style: "margin:0" }, "Dein Name besteht aus einem Adjektiv und einem Titel, z. B. „Pingeliger Grammatik-Ninja“. Der Titel hängt an deinen Punkten, das Adjektiv an der Zahl deiner Prüfungen mit 100 %. Das Adjektiv wird passend gebeugt. Die Zahlen sind für dich berechnet" + (profOn(k) ? " (Faktor " + fmtF(li.f) + ", aus deinem Profil)" : "") + ". Erreichte Level gehen nie verloren. Dein aktueller Stand ist farbig markiert."),
+      h("b", null, "Titel nach Punkten"), tbl(["Level", "Titel", "Punkte ab"], tRows),
+      h("b", null, "Adjektive nach Prüfungen mit 100 %"), tbl(["Level", "Adjektiv", "Prüfungen ab"], aRows),
+      h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte (ab " + PT.min + " % richtig): " + PT.own + " für eine eigene Übung, " + PT.asg + " für eine Übung aus Aufgabe oder Auftrag, " + PT.exam + " für eine Prüfung. Kapitel-Sterne: 6 Übungen in Folge mit 100 % im selben Kapitel schalten die Kapitelprüfung frei (bestanden ab " + chapPass() + " %).")));
+}
+
+/* ------------------------------------------------------------------ Feier-Animationen (je Person an- und ausschaltbar) */
+const reducedMotion = () => { try { return !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { return false; } };
+function animOn(kid) {
+  if (reducedMotion()) return false;
+  if (S.animOff && kid in S.animOff) return !S.animOff[kid];
+  try { return localStorage.getItem("vt_anim_" + kid) !== "0"; } catch (e) { return true; }
+}
+function setAnim(kid, on) { S.animOff = S.animOff || {}; S.animOff[kid] = !on; try { localStorage.setItem("vt_anim_" + kid, on ? "1" : "0"); } catch (e) {} }
+const CELEB_JOKES = {
+  level: ["Die Vokabeln zittern bereits.", "Das Wörterbuch ist beeindruckt.", "Nicht schlecht für einen Menschen."],
+  chap: ["Dieses Kapitel hat nichts mehr zu melden.", "Der Lektionstext kapituliert.", "Fehlerfrei und ein bisschen unheimlich."],
+  exam: ["Der Rotstift bleibt im Etui.", "Geprüft und für gut befunden.", "Das war fast schon unverschämt gut."],
+  asg: ["Auftrag erledigt, Chef.", "Die Belohnung wartet schon.", "Pflichtbewusstsein auf Höchstniveau."]
+};
+let celebQueue = [], celebRun = false, celebTimer = null;
+function celebrate(c) {
+  if (!animOn(c.kid || S.kid)) return false;
+  celebQueue.push(c); if (!celebRun) celebNext();
+  return true;
+}
+function celebNext() {
+  clearTimeout(celebTimer);
+  const old = document.querySelector(".celeb"); if (old) old.remove();
+  const c = celebQueue.shift();
+  if (!c) { celebRun = false; return; }
+  celebRun = true;
+  const pool = CELEB_JOKES[c.kind] || [], joke = pool.length ? pool[Math.floor(Math.random() * pool.length)] : "";
+  const head = { level: "Level-Up!", chap: "Kapitel gemeistert!", exam: "Bestanden!", asg: "Auftrag geschafft!" }[c.kind] || "Geschafft!";
+  const cols = ["#ffd84d", "#2447b2", "#14804f", "#bf3329", "#7a3cc4", "#e8793a"], ov = h("div", { class: "celeb", role: "status", "aria-live": "polite" });
+  for (let i = 0; i < 40; i++) {
+    const p = h("i", { "aria-hidden": "true" });
+    p.style.cssText = "left:" + (Math.random() * 96 + 2).toFixed(1) + "%;background:" + cols[i % cols.length] + ";--dx:" + (Math.random() * 24 - 12).toFixed(1) + "vw;--r:" + Math.round(360 + Math.random() * 720) + "deg;--t:" + (2.2 + Math.random() * 1.4).toFixed(2) + "s;--d:" + (Math.random() * 0.6).toFixed(2) + "s";
+    ov.append(p);
+  }
+  const card = h("div", { class: "cc", tabindex: "0" }, h("div", { class: "cs", "aria-hidden": "true" }, "★"), h("div", { class: "ch" }, head), h("div", { class: "cm" }, c.main || ""),
+    c.sub ? h("div", { class: "cx" }, c.sub) : null, joke ? h("div", { class: "cx", style: "font-style:italic" }, joke) : null, h("div", { class: "cx" }, "Tippen zum Schließen"));
+  ov.append(card); document.body.append(ov);
+  const done = () => celebNext();
+  card.addEventListener("click", done);
+  const esc = e => { if (e.key === "Escape") { document.removeEventListener("keydown", esc); done(); } };
+  document.addEventListener("keydown", esc, { once: true });
+  celebTimer = setTimeout(() => { document.removeEventListener("keydown", esc); done(); }, c.ms || 3600);
+}
+
+function animSwitch(kid) {
+  const on = animOn(kid), rm = reducedMotion();
+  const cb = h("input", { type: "checkbox", checked: on, disabled: rm, style: "width:22px;height:22px;min-height:0;flex:none" });
+  cb.addEventListener("change", () => { setAnim(kid, cb.checked); renderAll(); });
+  return h("div", { class: "stack", style: "gap:8px" },
+    h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, cb, h("span", null, "Animationen bei Erfolgen (Level-Up, Kapitel, Prüfung, Auftrag)")),
+    rm ? h("div", { class: "muted", style: "font-size:13px" }, "Dein Gerät hat „Bewegung reduzieren“ eingestellt, deshalb gibt es keine Animationen.") : null,
+    on ? h("button", { class: "btn sec small", type: "button", onclick: () => celebrate({ kind: "level", kid, main: fullTitle(levelInfo(kid).lt, levelInfo(kid).la), sub: "So sieht eine Feier aus" }) }, "Animation ansehen") : null);
+}
+
 async function exportBackup() {
   if (!S.dl) { toast("Speichern von Dateien ist hier nicht verfügbar."); return; }
-  const data = { app: "vokabeltrainer", version: 2, exported: new Date().toISOString(), kids: kidsOf(),
+  const data = { app: "vokabeltrainer", version: 2, exported: new Date().toISOString(), kids: kidsOf(), langNames: Object.fromEntries(S.settings.langs.map(l => [l.id, l.name])), chap: S.chap,
     languages: S.settings.langs.map(l => ({ name: l.name, words: (S.vocab[l.id] || []).map(x => ({ f: x.f, d: x.d, h: x.h || "", c: normC(x.c), t: tg(x) })) })),
     log: S.log, asg: Object.values(S.asgs), pts: S.pts };
   try { await S.dl.save({ filename: "Vokabeltrainer_Sicherung_" + new Date().toISOString().slice(0, 10) + ".json", data: JSON.stringify(data, null, 1) }); toast("Sicherung gespeichert."); }
@@ -2512,12 +2867,13 @@ async function importBackup() {
     try {
       const data = JSON.parse(await file.text());
       if (data.app !== "vokabeltrainer" || !Array.isArray(data.languages)) throw new Error("Das ist keine Sicherung dieser App.");
-      const kids = Array.isArray(data.kids) && data.kids.length ? data.kids.map(k => ({ id: String(k.id), name: String(k.name) })) : [{ id: "k1", name: "Person 1" }];
+      const kids = Array.isArray(data.kids) && data.kids.length ? data.kids.map(k => ({ id: String(k.id), name: String(k.name), active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}), ...(k.prof ? { prof: k.prof } : {}) })) : [{ id: "k1", name: "Person 1" }];
       const total = data.languages.reduce((s, l) => s + l.words.length, 0);
       if (!(await confirmBox("Sicherung einspielen?", "Alle aktuellen Sprachen, Personen, Aufgaben und Vokabeln (" + Object.values(S.vocab).reduce((s, a) => s + a.length, 0) + ") werden durch die Sicherung (" + data.languages.length + " Sprachen, " + kids.length + " Personen, " + total + " Vokabeln) ersetzt.", "Einspielen", true))) return;
       for (const k of kidsOf()) { await wdelete("exam/" + k.id); delete S.exams[k.id]; await wdelete("task/" + k.id); delete S.tasks[k.id]; }
       for (const a of Object.values(S.asgs)) await wdelete("asg/" + a.id); S.asgs = {};
       for (const id of Object.keys(S.pts)) await wdelete("pts/" + id); S.pts = {};
+      for (const id of Object.keys(S.chap)) await wdelete("chap/" + id); S.chap = {};
       for (const l of S.settings.langs) await saveWords(l.id, []);
       const langs = [];
       for (const l of data.languages) {
@@ -2526,6 +2882,8 @@ async function importBackup() {
           c: (x.c && typeof x.c === "object") ? x.c : (x.a ? { [kids[0].id]: [+x.a || 0, +x.r || 0, +x.w || 0] } : {}),
           t: Array.isArray(x.t) ? x.t.map(String) : ["", "", ""] })));
       }
+      { const nm = data.langNames && typeof data.langNames === "object" ? data.langNames : {}, byNm = new Map(langs.map(l => [l.name, l.id]));
+        kids.forEach(k => { if (!k.prof) return; const p = cleanProf({ ...k.prof, langs: (Array.isArray(k.prof.langs) ? k.prof.langs : []).map(l => ({ ...l, id: byNm.get(nm[l.id]) || l.id })) }); if (p) k.prof = p; else delete k.prof; }); }
       await wupdate("app/settings", { langs, kids, cfg: { lang: langs[0] ? langs[0].id : "", dir: "f2d", from: 1, to: 50 } });
       { const kidSet = new Set(kids.map(k => k.id)), byName = new Map(langs.map(l => [l.name, l.id]));
         for (const raw of (Array.isArray(data.asg) ? data.asg : []).slice(0, 300)) {
@@ -2533,7 +2891,8 @@ async function importBackup() {
           a.reqs.forEach(r => { r.lang = byName.get(r.langName) || r.lang; });
           await wset("asg/" + a.id, a); S.asgs[a.id] = a;
         }
-        if (data.pts && typeof data.pts === "object") for (const id of Object.keys(data.pts)) if (kidSet.has(id)) { const p = normPts(data.pts[id], id); await wset("pts/" + id, p); S.pts[id] = p; } }
+        if (data.pts && typeof data.pts === "object") for (const id of Object.keys(data.pts)) if (kidSet.has(id)) { const p = normPts(data.pts[id], id); await wset("pts/" + id, p); S.pts[id] = p; }
+        if (data.chap && typeof data.chap === "object") for (const id of Object.keys(data.chap)) if (kidSet.has(id)) { const c = remapChapLang(normChap(data.chap[id], id), o => byName.get((data.langNames || {})[o]) || o); await wset("chap/" + id, c); S.chap[id] = c; } }
       toast("Sicherung eingespielt.");
     } catch (e) { toast("Einspielen fehlgeschlagen: " + (e.message || e)); }
   });
@@ -2589,6 +2948,7 @@ function wire(db) {
   db.collection("exam_log").orderBy("ts", "desc").limit(300).onSnapshot(qs => { S.examLog = qs.docs.map(d => d.data()); softRender(); }, bad);
   db.collection("asg").onSnapshot(qs => { const m = {}; qs.docs.forEach(d => { const a = clone(d.data()); if (a && a.id && Array.isArray(a.reqs)) m[a.id] = a; }); S.asgs = m; softRender(); }, bad);
   db.collection("pts").onSnapshot(qs => { const m = {}; qs.docs.forEach(d => { m[d.id] = clone(d.data()); }); S.pts = m; softRender(); }, bad);
+  db.collection("chap").onSnapshot(qs => { const m = {}; qs.docs.forEach(d => { m[d.id] = clone(d.data()); }); S.chap = m; softRender(); }, bad);
   db.collection("vocab").onSnapshot(qs => {
     const blocks = {}, vocab = {};
     qs.docs.forEach(d => { blocks[d.id] = d.data(); });
