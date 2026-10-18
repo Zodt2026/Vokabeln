@@ -363,7 +363,7 @@ const S = {
   tasks: {}, kid: null, taskLoaded: false, vocabLoaded: false,
   vocab: {}, blockDocs: {}, log: [],
   tab: "start", home: null, hlang: null, hdir: {}, vlang: null, vq: "", vlimit: 60, logKid: "all", lastTag: ["", "", ""], vtag: ["", "", ""], vopen: false, vsel: new Set(), vselMode: false,
-  exams: {}, examLog: [], examLoaded: false, mode: "lernen", finalizing: false, finalFail: 0, asgs: {}, pts: {}, chap: {},
+  exams: {}, examLog: [], examLoaded: false, mode: "lernen", finalizing: false, finalFail: 0, asgs: {}, pts: {}, chap: {}, authed: {}, pinFail: {},
   parentUntil: 0, fails: 0, lockedUntil: 0, busy: false, migrating: false
 };
 Object.defineProperty(S, "task", { get() { return S.tasks[S.kid] || null; }, set(v) { if (v) S.tasks[S.kid] = v; else delete S.tasks[S.kid]; } });
@@ -617,7 +617,7 @@ async function finalizeCounts(kid) {
   let pts = 0;
   if (!((t.rep || 0) >= 1)) {      /* Wiederholung derselben Vokabeln: keine Punkte, kein Auftragsfortschritt */
     const pct = 100 * t.ok / Math.max(1, t.items.length);
-    if (pct + 1e-9 >= PT.min) { const cat = (t.src === "admin" || t.asg) ? 2 : 1; pts = cat === 2 ? PT.asg : PT.own; await awardPoints(kid, "t" + t.created, cat, pts, ptLabel(t)); }
+    if (pct + 1e-9 >= PT.min) { const cat = (t.src === "admin" || t.asg) ? 2 : 1; pts = cat === 2 ? PT.asg : PT.own; await awardPoints(kid, "t" + t.created, cat, pts, ptLabel(t), taskMeta(t)); }
     if (t.asg) await creditAsg(t.asg, "t" + t.created, pct);
     await recordChapRun(kid, t, pct);
   }
@@ -796,10 +796,11 @@ function renderAll() {
   if (!S.settingsLoaded || !S.vocabLoaded || !S.taskLoaded || !S.examLoaded) { root.append(h("div", { class: "empty" }, "Lade Daten …")); return; }
   if (!S.settings) { root.append(LOCAL ? localWelcome() : setupView()); return; }
   if (!S.canWrite) root.append(h("div", { class: "banner warn" }, "Nur Lesezugriff: Änderungen sind mit diesem Zugang nicht möglich."));
-  const gated = S.tab !== "start" && S.tab !== "eltern" && needProfile(S.kid);
-  root.append(gated ? profileGate(S.kid) : S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "ziele" ? zieleView() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
+  const noLogin = S.tab !== "eltern" && pinsActive() && !kidAuthed(S.kid);
+  const gated = !noLogin && S.tab !== "start" && S.tab !== "eltern" && needProfile(S.kid);
+  root.append(noLogin ? tilesView() : gated ? profileGate(S.kid) : S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "ziele" ? zieleView() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
   root.append(tabsNav());
-  if (S.tab === "lernen" && !gated) { const ab = actionBar(); if (ab) root.append(ab); }
+  if (S.tab === "lernen" && !gated && !noLogin) { const ab = actionBar(); if (ab) root.append(ab); }
   syncExamTimer();
   if (keep) { const n = document.querySelector('[data-key="' + keep.key + '"]'); if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
   window.scrollTo(0, scroll);
@@ -810,9 +811,9 @@ function header() {
     h("div", { class: "brand" }, h("h1", null, "Vokabeltrainer")),
     h("span", { class: "sync" }, h("span", { class: "dot " + st[0] }), st[1], LOCAL && window.VT_SEC && S.settings ? h("button", { class: "btn small sec", style: "margin-left:10px", onclick: () => window.VT_SEC.lock(), "aria-label": "Lern-Version sperren" }, "Sperren") : null));
   const frag = document.createDocumentFragment(); frag.append(top);
-  if (S.booted && S.db && S.settings && activeKids().length > 1 && (S.tab === "lernen" || S.tab === "ziele" || S.tab === "vokabeln")) {
+  if (S.booted && S.db && S.settings && activeKids().length > 1 && parentOn() && (S.tab === "lernen" || S.tab === "ziele" || S.tab === "vokabeln")) {
     frag.append(h("div", { class: "row", style: "margin:0 0 14px", role: "group", "aria-label": "Wer lernt?" },
-      activeKids().map(k => h("button", { class: "btn small " + (k.id === S.kid ? "" : "sec"), "aria-pressed": k.id === S.kid ? "true" : "false", onclick: () => setKid(k.id) }, k.name))));
+      activeKids().map(k => h("button", { class: "btn small " + (k.id === S.kid ? "" : "sec"), "aria-pressed": k.id === S.kid ? "true" : "false", onclick: () => { S.authed[k.id] = S.authed[k.id] || "admin"; setKid(k.id); } }, k.name))));
   }
   return frag;
 }
@@ -901,27 +902,28 @@ const examDone = (lang, kid, t) => S.examLog.some(l => l.kid === kid && l.lang =
 const pbar = pct => h("div", { class: "pbar" + (pct >= 80 ? " done" : ""), role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, h("i", { style: "width:" + pct + "%" }));
 function pickTile(id) {
   flushAnswers(); S.kid = id; try { localStorage.setItem("vt_kid", id); } catch (e) {}
+  if (!S.authed[id]) S.authed[id] = true;
   S.home = id; S.hlang = null; renderAll(); window.scrollTo(0, 0);
 }
 function startView() {
   const act = activeKids();
   const home = (S.home && act.some(k => k.id === S.home)) ? S.home : (act.length === 1 ? act[0].id : null);
   if (home && S.kid !== home) { S.kid = home; }
-  const v = home ? (needProfile(home) ? profileGate(home) : personHome(home, act.length > 1)) : tilesView();
+  const v = home && kidAuthed(home) ? (needProfile(home) ? profileGate(home) : personHome(home, act.length > 1)) : tilesView();
   return LOCAL ? h("div", { class: "stack" }, v, S.settings && (S.log.length || S.examLog.length || Object.keys(S.pts).length) ? localFeedbackCard() : null, localImportCard()) : v;
 }
 function tilesView() {
   const w = h("div", { class: "stack" });
-  w.append(h("div", null, h("h2", null, "Wer lernt?"), h("p", { class: "muted", style: "margin:4px 0 0" }, "Tippe auf deinen Namen.")));
+  w.append(h("div", null, h("h2", null, "Wer lernt?"), h("p", { class: "muted", style: "margin:4px 0 0" }, parentOn() && pinsActive() ? "Administrator angemeldet: Du kannst jedes Konto ohne PIN öffnen." : "Tippe auf deinen Namen" + (pinsActive() ? " und gib deine PIN ein." : "."))));
   w.append(h("div", { class: "tiles" }, kidsOf().map(k => {
     const on = k.active !== false, t = S.tasks[k.id];
     let sub = "inaktiv";
     if (on) { const p = progressOf(Object.values(S.vocab).flat(), k.id); sub = p.n ? "Gesamt " + p.pct + " %" : "noch keine Vokabeln"; }
-    return h("button", { type: "button", class: "tile" + (on ? "" : " off"), disabled: !on, onclick: () => pickTile(k.id) },
+    return h("button", { type: "button", class: "tile" + (on ? "" : " off"), disabled: !on, onclick: () => loginTile(k.id) },
       avatar(k),
       h("span", { class: "tn" }, k.name), on ? h("span", { class: "rank" }, rankOf(k.id)) : null, on ? h("span", { class: "muted", style: "font-size:12px" }, lvlText(k.id)) : null, h("span", { class: "muted" }, sub),
       on && t && t.state === "OFFEN" ? h("span", { class: "pill mid" }, "Übung läuft") : null);
-  })));
+  }).concat(pinsActive() ? [adminTileEl()] : [])));
   if (!activeKids().length) w.append(h("div", { class: "banner warn" }, LOCAL ? "Im Lern-Paket ist keine aktive Person enthalten." : "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“."));
   return w;
 }
@@ -929,7 +931,7 @@ function personHome(kid, canSwitch) {
   const k = kidsOf().find(x => x.id === kid), w = h("div", { class: "stack" });
   w.append(h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
     h("div", { class: "row", style: "flex-wrap:nowrap;gap:12px" }, avatar(k), h("div", null, h("h2", { class: "greet" }, greetingFor(kid, k.name).title), h("div", { class: "rank" }, rankOf(kid)), h("div", { class: "muted" }, lvlText(kid)))),
-    canSwitch ? h("button", { class: "btn small sec", onclick: () => { S.home = null; renderAll(); window.scrollTo(0, 0); } }, "Andere Person") : null));
+    canSwitch ? h("button", { class: "btn small sec", onclick: () => { delete S.authed[kid]; S.home = null; renderAll(); window.scrollTo(0, 0); } }, "Andere Person") : null));
   w.append(h("p", { class: "greetline" }, greetingFor(kid, k.name).line));
   const t = S.tasks[kid];
   if (t) w.append(h("div", { class: "card stack" },
@@ -1027,7 +1029,7 @@ function buildPackage(kidIds, withStats) {
       return [x.f, x.d, x.h || "", c, tg(x)];
     });
   });
-  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, chapPass: chapPass(), chapSecs: chapSecs(), chap: withStats ? Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])) : {}, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
+  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, board: Object.fromEntries(activeKids().map(k => [k.id, boardStats(k.id)])), chapPass: chapPass(), chapSecs: chapSecs(), chap: withStats ? Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])) : {}, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
 }
 const randPw = () => { const al = "abcdefghjkmnpqrstuvwxyz23456789", r = crypto.getRandomValues(new Uint32Array(10)); const t = Array.from(r, x => al[x % al.length]).join(""); return t.slice(0, 5) + "-" + t.slice(5); };
 async function packageDialog() {
@@ -1096,7 +1098,7 @@ async function importPackage(pkg, useStats) {
   for (const l of (cur.langs || []).filter(l => !langs.some(x => x.id === l.id))) await saveWords(l.id, []);
   await wset("app/settings", { v: 2, salt: cur.salt || uid(), pwHash: cur.pwHash || ("x" + uid() + uid()), langs, kids,
     cfgs: pkg.cfgs && typeof pkg.cfgs === "object" ? pkg.cfgs : (cur.cfgs || {}), cfg: pkg.cfg && typeof pkg.cfg === "object" ? pkg.cfg : (cur.cfg || { lang: langs[0].id, dir: "f2d", from: 1, to: 50 }),
-    chapPass: Number(pkg.chapPass) >= 50 && Number(pkg.chapPass) <= 100 ? Math.round(Number(pkg.chapPass)) : (cur.chapPass || 95), chapSecs: pkg.chapSecs != null ? cleanSecs(pkg.chapSecs) : (cur.chapSecs == null ? 15 : cur.chapSecs) });
+    chapPass: Number(pkg.chapPass) >= 50 && Number(pkg.chapPass) <= 100 ? Math.round(Number(pkg.chapPass)) : (cur.chapPass || 95), chapSecs: pkg.chapSecs != null ? cleanSecs(pkg.chapSecs) : (cur.chapSecs == null ? 15 : cur.chapSecs), board: mergeBoard(cur.board, cleanBoard(pkg.board)) });
   await mergeFromPackage(pkg, ids);
   return { words: total, added, kids: kids.length, langs: langs.length };
 }
@@ -1978,7 +1980,8 @@ async function resetStatsDialog() {
 function kidsCard() {
   const kids = kidsOf();
   const c = h("div", { class: "card stack" }, h("h2", null, "Personen"));
-  kids.forEach(k => c.append(h("div", { class: "row" }, avatar(k, "sm"), h("span", { class: "grow" }, h("b", null, k.name), h("div", { class: "muted" }, profOn(k) ? profLabel(k) : "Profil noch nicht ausgefüllt (die Person muss es beim nächsten Start ausfüllen)")),
+  kids.forEach(k => c.append(h("div", { class: "row" }, avatar(k, "sm"), h("span", { class: "grow" }, h("b", null, k.name), h("div", { class: "muted" }, profOn(k) ? profLabel(k) : "Profil noch nicht ausgefüllt (die Person muss es beim nächsten Start ausfüllen)"), pinsActive() && k.active !== false ? h("div", { class: "muted" }, "PIN: " + (k.pin ? "gesetzt" : "noch nicht vergeben")) : null),
+    k.pin ? h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => resetPin(k) }, "PIN zurücksetzen") : null,
     h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => profileDialog(k) }, profOn(k) ? "Profil ändern" : "Profil"),
     h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => photoDialog(k) }, okPhoto(k.photo) ? "Foto ändern" : "Foto"),
     h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => renameKid(k) }, "Umbenennen"),
@@ -2084,8 +2087,8 @@ async function finalizeExam(kid) {
   let pts = 0;
   if (t.passed) celebrate({ kind: "exam", kid, main: t.ok + " von " + t.items.length + " richtig", sub: "Bestehensgrenze " + (t.pass || 100) + " %" });
   { const pct = 100 * t.ok / Math.max(1, t.items.length);
-    if (pct + 1e-9 >= PT.min) { pts = PT.exam; await awardPoints(kid, "e" + t.created, 3, pts, ptLabel(t)); }
-    if (t.items.length && t.ok === t.items.length) await awardPoints(kid, "p" + t.created, 4, 0, ptLabel(t));
+    if (pct + 1e-9 >= PT.min) { pts = PT.exam; await awardPoints(kid, "e" + t.created, 3, pts, ptLabel(t), taskMeta(t)); }
+    if (t.items.length && t.ok === t.items.length) await awardPoints(kid, "p" + t.created, 4, 0, ptLabel(t), taskMeta(t));
     if (t.chap && t.passed) await recordChapPass(kid, t.chap, t.submitted);
     if (t.asg) await creditAsg(t.asg, "e" + t.created, pct); }
   await wupdate("exam/" + kid, { logged: true, pts });
@@ -2543,7 +2546,7 @@ function profLabel(k) {
 /* Punktekonto: Ereignisse [id, Zeit, Kategorie, Punkte, Text]. Kategorie 1 bis 3 = Punkte, 4 = Prüfung mit 100 % (zählt für das Adjektiv). lv = höchste erreichte Level (sinken nie). */
 function normPts(p, kid) {
   const ev = (p && Array.isArray(p.ev) ? p.ev : []).filter(e => Array.isArray(e) && typeof e[0] === "string" && [1, 2, 3, 4].includes(e[2]) && Number.isFinite(+e[1]) && Number.isFinite(+e[3]))
-    .map(e => [String(e[0]).slice(0, 60), +e[1], e[2], e[2] === 4 ? 0 : Math.max(0, Math.min(100, Math.round(+e[3]))), String(e[4] || "").slice(0, 60)]);
+    .map(e => [String(e[0]).slice(0, 60), +e[1], e[2], e[2] === 4 ? 0 : Math.max(0, Math.min(100, Math.round(+e[3]))), String(e[4] || "").slice(0, 60), String(e[5] || "").slice(0, 40), String(e[6] || "").slice(0, 12)]);
   const o = p && Array.isArray(p.old) ? p.old : [], l = p && Array.isArray(p.lv) ? p.lv : [];
   return { kid, ev, old: [0, 1, 2, 3].map(i => Math.max(0, Math.round(+o[i] || 0))), lv: [0, 1].map(i => Math.max(1, Math.min(15, Math.round(+l[i] || 1)))) };
 }
@@ -2579,11 +2582,11 @@ async function bumpLevels(kid, announce) {
   await wset("pts/" + kid, cur); S.pts[kid] = cur;
   if (announce && !celebrate({ kind: "level", kid, main: fullTitle(info.lt, info.la), sub: "Titel-Level " + info.lt + " · Adjektiv-Level " + info.la })) toast("Level-Up! Du bist jetzt: " + fullTitle(info.lt, info.la));
 }
-async function awardPoints(kid, id, cat, pts, label) {
+async function awardPoints(kid, id, cat, pts, label, meta) {
   if (!pts && cat !== 4) return false;
   const cur = normPts(S.pts[kid], kid);
   if (cur.ev.some(e => e[0] === id)) return false;                    /* gleiche Übung nie zweimal werten */
-  cur.ev.push([id, Date.now(), cat, pts, String(label || "").slice(0, 60)]);
+  cur.ev.push([id, Date.now(), cat, pts, String(label || "").slice(0, 60), String((meta && meta.lang) || "").slice(0, 40), String((meta && meta.kl) || "").slice(0, 12)]);
   prunePts(cur); await wset("pts/" + kid, cur); S.pts[kid] = cur;
   await bumpLevels(kid, true); return true;
 }
@@ -2674,7 +2677,7 @@ const readyCard = (r, kid) => h("div", { class: "card stack chapr" }, h("b", nul
   h("button", { class: "btn", style: "background:var(--ok)", disabled: S.busy || !S.canWrite, onclick: () => startChapterExam(kid || S.kid, r.lang, r.t) }, "Kapitelprüfung starten"));
 
 /* ---- Bereich „Ziele“ (Person) ---- */
-function zieleView() {
+function zieleOwn() {
   const w = h("div", { class: "stack" });
   if (!S.kid) { w.append(h("div", { class: "banner warn" }, "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“.")); return w; }
   const kid = S.kid, p = ptsOf(kid), li = levelInfo(kid), k = kidObj(kid);
@@ -2881,6 +2884,162 @@ function greetingFor(kid, name) {
 }
 const lvlText = kid => { const i = levelInfo(kid); return "Level " + i.lt + " · Adjektiv " + i.la; };
 
+/* ------------------------------------------------------------------ PIN je Person (ab 2 aktiven Personen) und Admin-Zugang auf der Startseite */
+const pinsActive = () => activeKids().length > 1;
+const kidAuthed = id => !pinsActive() || !!(S.authed && S.authed[id]) || parentOn();
+const PIN_MAX_FAILS = 5;
+const pinHash = (k, pin, salt) => hashPw(pin, k.id + "|" + salt);
+const pinInput = label => h("input", { type: "password", inputmode: "numeric", pattern: "[0-9]*", maxlength: 4, autocomplete: "off", "aria-label": label, placeholder: "••••", style: "text-align:center;font-size:28px;letter-spacing:12px;max-width:210px;margin:0 auto;display:block" });
+const digits = e => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 4); };
+function askPinDialog(k) {
+  return modal("PIN für " + k.name, (box, close) => {
+    const inp = pinInput("PIN"), msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px;text-align:center", role: "alert" });
+    const go = async () => {
+      const f = S.pinFail[k.id] || (S.pinFail[k.id] = { n: 0, until: 0 });
+      if (Date.now() < f.until) { msg.textContent = "Zu viele Versuche. Bitte " + Math.ceil((f.until - Date.now()) / 1000) + " Sekunden warten."; inp.value = ""; return; }
+      if (inp.value.length !== 4) return;
+      if ((await pinHash(k, inp.value, k.pin.s)) === k.pin.h) { f.n = 0; close(true); return; }
+      f.n++;
+      if (f.n >= PIN_MAX_FAILS) { f.until = Date.now() + 30000; f.n = 0; msg.textContent = "Zu viele Versuche. Bitte 30 Sekunden warten."; }
+      else msg.textContent = "Falsche PIN. Noch " + (PIN_MAX_FAILS - f.n) + (PIN_MAX_FAILS - f.n === 1 ? " Versuch." : " Versuche.");
+      inp.value = ""; inp.focus();
+    };
+    inp.addEventListener("input", e => { digits(e); if (inp.value.length === 4) go(); });
+    box.append(h("div", { style: "text-align:center" }, avatar(k)), inp, msg,
+      h("p", { class: "muted", style: "margin:0;text-align:center;font-size:13px" }, "PIN vergessen? Der Administrator kann sie zurücksetzen."),
+      h("div", { class: "row" }, h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
+    setTimeout(() => inp.focus(), 60);
+  }, { sticky: true }).then(v => !!v);
+}
+function setPinDialog(k) {
+  return modal("PIN festlegen: " + k.name, (box, close) => {
+    const a = pinInput("PIN (4 Ziffern)"), b2 = pinInput("PIN wiederholen"), msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px;text-align:center", role: "alert" });
+    a.addEventListener("input", digits); b2.addEventListener("input", digits);
+    const go = async btn => {
+      if (a.value.length !== 4) { msg.textContent = "Die PIN muss aus genau 4 Ziffern bestehen."; return; }
+      if (a.value !== b2.value) { msg.textContent = "Die beiden PINs sind nicht gleich."; return; }
+      if (!S.canWrite) { msg.textContent = "Mit diesem Zugang kann gerade nichts gespeichert werden."; return; }
+      msg.textContent = ""; btn.disabled = true;
+      try {
+        const salt = uid(), hash = await pinHash(k, a.value, salt);
+        await wupdate("app/settings", { kids: kidsOf().map(x => x.id === k.id ? { ...x, pin: { s: salt, h: hash } } : x) });
+        toast("PIN gespeichert."); close(true);
+      } catch (e) { btn.disabled = false; toastErr(e, "Die PIN konnte nicht gespeichert werden."); }
+    };
+    box.append(h("div", { style: "text-align:center" }, avatar(k)),
+      h("p", { class: "muted", style: "margin:0;text-align:center" }, "Damit nur du in dein Konto kommst, vergibst du jetzt eine eigene PIN aus 4 Ziffern. Merk sie dir gut, sie wird bei jedem Start gefragt."),
+      h("label", { class: "f", style: "text-align:center" }, "Neue PIN"), a, h("label", { class: "f", style: "text-align:center" }, "PIN wiederholen"), b2, msg,
+      h("div", { class: "row" }, h("button", { class: "btn", onclick: e => go(e.currentTarget) }, "PIN speichern"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
+    setTimeout(() => a.focus(), 60);
+  }, { sticky: true }).then(v => !!v);
+}
+async function loginTile(id) {
+  const k = kidObj(id); if (!k || k.active === false) return;
+  if (pinsActive() && !kidAuthed(id)) {
+    const ok = k.pin ? await askPinDialog(k) : await setPinDialog(k);
+    if (!ok) return;
+    S.authed[id] = true;
+  } else if (pinsActive() && parentOn()) S.authed[id] = S.authed[id] || "admin";
+  S.tab = "start"; pickTile(id);
+}
+async function adminTileClick() {
+  if (parentOn()) { touchParent(); S.tab = "eltern"; renderAll(); window.scrollTo(0, 0); return; }
+  if (await askParent()) { S.tab = "start"; S.home = null; renderAll(); }
+}
+const adminTileEl = () => h("button", { type: "button", class: "tile", onclick: adminTileClick },
+  (() => { const e = h("span", { class: "av", style: "background:#d8d2e8", "aria-hidden": "true" }); e.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#1b2a41" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'; return e; })(), h("span", { class: "tn" }, "Admin"),
+  h("span", { class: "muted" }, parentOn() ? "angemeldet · Verwaltung öffnen" : "mit Passwort anmelden"));
+async function resetPin(k) {
+  if (!(await confirmBox("PIN zurücksetzen?", k.name + " vergibt beim nächsten Start eine neue PIN.", "Zurücksetzen", true))) return;
+  try { await wupdate("app/settings", { kids: kidsOf().map(x => { if (x.id !== k.id) return x; const { pin: _p, ...rest } = x; return rest; }) }); delete S.authed[k.id]; toast("PIN von " + k.name + " zurückgesetzt."); } catch (e) { toastErr(e); }
+}
+
+/* ------------------------------------------------------------------ Rangliste (Unterpunkt von „Ziele“) */
+function taskMeta(t) {
+  const ws = S.vocab[t.lang] || []; let kl = null;
+  for (const it of t.items) { const ix = wordIdx(t.lang, it); if (ix < 0) { kl = ""; break; } const c = tg(ws[ix])[1] || ""; if (kl === null) kl = c; else if (kl !== c) { kl = ""; break; } }
+  return { lang: t.lang, kl: kl || "" };
+}
+/* Verdichteter Stand einer Person: Zellen je Sprache und Klasse = [Punkte eigene Übungen, Punkte Aufgaben/Aufträge, Punkte Prüfungen, Prüfungen mit 100 %, geschaffte Aufträge] */
+function boardStats(kid) {
+  const p = normPts(S.pts[kid], kid), c = {}, cell = (l, k) => c[l + "|" + k] || (c[l + "|" + k] = [0, 0, 0, 0, 0]);
+  p.ev.forEach(e => { const x = cell(e[5] || "", e[6] || ""); if (e[2] === 4) x[3]++; else x[e[2] - 1] += e[3]; });
+  if (p.old.some(Boolean)) { const x = cell("", ""); for (let i = 0; i < 4; i++) x[i] += p.old[i]; }
+  let ta = 0;
+  asgOf(kid).forEach(a => {
+    if (!a.doneAt) return; ta++; const seen = new Set();
+    a.reqs.forEach(r => { const k = r.flt && r.flt.k && r.flt.k !== "-" && !String(r.flt.k).includes("|") ? r.flt.k : "", key = r.lang + "|" + k; if (!seen.has(key)) { seen.add(key); cell(r.lang, k)[4]++; } });
+  });
+  const li = levelInfo(kid);
+  return { n: (kidObj(kid) || {}).name || "", c, ta, rk: [li.lt, li.la], at: Date.now() };
+}
+function cleanBoard(b) {
+  const out = {}; if (!b || typeof b !== "object") return out;
+  const num = x => Number.isFinite(+x) ? Math.max(0, Math.min(1e6, Math.round(+x))) : 0;
+  Object.keys(b).slice(0, 40).forEach(id => {
+    const e = b[id]; if (!e || typeof e !== "object") return;
+    const c = {}; Object.keys(e.c && typeof e.c === "object" ? e.c : {}).slice(0, 300).forEach(k => { const v = e.c[k]; if (Array.isArray(v)) c[String(k).slice(0, 80)] = [0, 1, 2, 3, 4].map(i => num(v[i])); });
+    const rk = Array.isArray(e.rk) ? e.rk : [];
+    out[String(id).slice(0, 40)] = { n: String(e.n || "").slice(0, 60), c, ta: num(e.ta), rk: [Math.max(1, Math.min(15, Math.round(+rk[0]) || 1)), Math.max(1, Math.min(15, Math.round(+rk[1]) || 1))], at: Number.isFinite(+e.at) ? +e.at : 0 };
+  });
+  return out;
+}
+const mergeBoard = (a, b) => { const o = { ...(a || {}) }; Object.keys(b || {}).forEach(id => { if (!o[id] || (b[id].at || 0) >= (o[id].at || 0)) o[id] = b[id]; }); return o; };
+function boardRows() {
+  const rows = new Map();
+  Object.entries((S.settings && S.settings.board) || {}).forEach(([id, e]) => rows.set(id, { id, name: e.n, st: e, snap: true }));
+  kidsOf().filter(k => k.active !== false).forEach(k => rows.set(k.id, { id: k.id, name: k.name, kid: k, st: boardStats(k.id) }));
+  return [...rows.values()];
+}
+function boardScore(st, kind, lang, kl) {
+  const s = [0, 0, 0, 0, 0];
+  Object.keys(st.c || {}).forEach(k => { const [l, c] = k.split("|"); if ((lang && l !== lang) || (kl && c !== kl)) return; st.c[k].forEach((v, i) => { s[i] += v; }); });
+  if (kind === "asg") return { v: (!lang && !kl) ? (st.ta || 0) : s[4], sub: "", unit: "Aufträge" };
+  if (kind === "ueb") return { v: s[0] + s[1], sub: "Eigene " + s[0] + " · Aufgaben und Aufträge " + s[1], unit: "Punkte" };
+  if (kind === "pruef") return { v: s[2], sub: "Prüfungen mit 100 %: " + s[3], unit: "Punkte" };
+  return { v: s[0] + s[1] + s[2], sub: "Übungen " + (s[0] + s[1]) + " · Prüfungen " + s[2], unit: "Punkte" };
+}
+function rangView() {
+  const kind = S.rkind || "gesamt", lang = S.rlang || "", kl = S.rkl || "";
+  const rows = boardRows();
+  const kls = [...new Set(rows.flatMap(r => Object.keys(r.st.c || {}).map(k => k.split("|")[1]).filter(Boolean)))].sort(natCmp);
+  const langs = parentOn() ? S.settings.langs : allowedLangs(S.kid);
+  const kinds = [["gesamt", "Gesamt"], ["ueb", "Übungen"], ["pruef", "Prüfungen"], ["asg", "Aufträge"]];
+  const w = h("div", { class: "stack" });
+  w.append(h("div", { class: "seg", role: "group", "aria-label": "Wertung", style: "margin:0" }, kinds.map(([k, l]) => h("button", { type: "button", "aria-pressed": kind === k ? "true" : "false", onclick: () => { S.rkind = k; renderAll(); } }, l))));
+  const selL = h("select", { "aria-label": "Sprache" }, h("option", { value: "" }, "Alle Sprachen"), ...langs.map(l => h("option", { value: l.id }, l.name)));
+  const selK = h("select", { "aria-label": "Klasse" }, h("option", { value: "" }, "Alle Klassen"), ...kls.map(k => h("option", { value: k }, "Klasse " + k)));
+  selL.value = lang; selK.value = kl;
+  selL.addEventListener("change", () => { S.rlang = selL.value; renderAll(); }); selK.addEventListener("change", () => { S.rkl = selK.value; renderAll(); });
+  w.append(h("div", { class: "row" }, h("div", { class: "grow" }, selL), h("div", { class: "grow" }, selK)));
+  const sc = rows.map(r => ({ r, ...boardScore(r.st, kind, lang, kl) })).sort((a, b) => b.v - a.v || String(a.r.name).localeCompare(String(b.r.name), "de"));
+  let pos = 0; sc.forEach((x, i) => { if (i && x.v === sc[i - 1].v) x.pos = sc[i - 1].pos; else x.pos = i + 1; });
+  const me = sc.find(x => x.r.id === S.kid);
+  const unit = sc.length ? sc[0].unit : "Punkte";
+  if (me) w.append(h("div", { class: "banner " + (me.v > 0 && me.pos === 1 ? "done" : "open") }, me.v > 0 ? "Du bist auf Platz " + me.pos + " von " + sc.length + " (" + me.v + " " + unit + ")." : "Noch keine Wertung in dieser Auswahl. Los geht’s!"));
+  const card = h("div", { class: "card stack" });
+  sc.forEach(x => {
+    const mine = x.r.id === S.kid, li = x.r.st.rk || [1, 1];
+    card.append(h("div", { class: "row", style: "flex-wrap:nowrap;gap:12px;padding:8px;border-radius:12px;" + (mine ? "box-shadow:inset 0 0 0 2px var(--blue)" : "") },
+      h("span", { style: "font-weight:800;font-size:20px;min-width:28px;text-align:center" }, x.v > 0 ? String(x.pos) : "–"),
+      avatar(x.r.kid || { id: x.r.id, name: x.r.name }, "sm"),
+      h("div", { class: "grow" }, h("b", null, x.r.name + (mine ? " (du)" : "")), h("div", { class: "muted", style: "font-size:13px" }, fullTitle(li[0], li[1])), x.sub ? h("div", { class: "muted", style: "font-size:12px" }, x.sub) : null),
+      h("div", { style: "text-align:right" }, h("div", { style: "font-weight:800;font-size:20px" }, String(x.v)), h("div", { class: "muted", style: "font-size:12px" }, x.unit))));
+  });
+  if (!sc.length) card.append(h("div", { class: "empty" }, "Noch keine Personen."));
+  w.append(card);
+  const snaps = rows.filter(r => r.snap), newest = snaps.length ? Math.max(...snaps.map(r => r.st.at || 0)) : 0;
+  w.append(h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es für Übungen, Aufgaben, Aufträge und Prüfungen ab " + PT.min + " % richtig. Ältere Punkte ohne Angabe von Sprache und Klasse zählen nur bei „Alle Sprachen“ und „Alle Klassen“." + (newest ? " Der Stand der anderen Personen stammt vom Lern-Paket vom " + new Date(newest).toLocaleDateString("de-DE") + "." : "")));
+  return w;
+}
+function zieleView() {
+  const sub = S.zsub === "rang" ? "rang" : "ziele";
+  const w = h("div", { class: "stack" });
+  if (S.kid) w.append(h("div", { class: "seg", role: "group", "aria-label": "Ansicht", style: "margin:0" }, [["ziele", "Meine Ziele"], ["rang", "Rangliste"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": sub === k ? "true" : "false", onclick: () => { S.zsub = k; renderAll(); window.scrollTo(0, 0); } }, l))));
+  w.append(sub === "rang" && S.kid ? rangView() : zieleOwn());
+  return w;
+}
+
 async function exportBackup() {
   if (!S.dl) { toast("Speichern von Dateien ist hier nicht verfügbar."); return; }
   const data = { app: "vokabeltrainer", version: 2, exported: new Date().toISOString(), kids: kidsOf(), langNames: Object.fromEntries(S.settings.langs.map(l => [l.id, l.name])), chap: S.chap,
@@ -2896,7 +3055,7 @@ async function importBackup() {
     try {
       const data = JSON.parse(await file.text());
       if (data.app !== "vokabeltrainer" || !Array.isArray(data.languages)) throw new Error("Das ist keine Sicherung dieser App.");
-      const kids = Array.isArray(data.kids) && data.kids.length ? data.kids.map(k => ({ id: String(k.id), name: String(k.name), active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}), ...(k.prof ? { prof: k.prof } : {}) })) : [{ id: "k1", name: "Person 1" }];
+      const kids = Array.isArray(data.kids) && data.kids.length ? data.kids.map(k => ({ id: String(k.id), name: String(k.name), active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}), ...(k.prof ? { prof: k.prof } : {}), ...(k.pin && typeof k.pin === "object" ? { pin: { s: String(k.pin.s || "").slice(0, 40), h: String(k.pin.h || "").slice(0, 80) } } : {}) })) : [{ id: "k1", name: "Person 1" }];
       const total = data.languages.reduce((s, l) => s + l.words.length, 0);
       if (!(await confirmBox("Sicherung einspielen?", "Alle aktuellen Sprachen, Personen, Aufgaben und Vokabeln (" + Object.values(S.vocab).reduce((s, a) => s + a.length, 0) + ") werden durch die Sicherung (" + data.languages.length + " Sprachen, " + kids.length + " Personen, " + total + " Vokabeln) ersetzt.", "Einspielen", true))) return;
       for (const k of kidsOf()) { await wdelete("exam/" + k.id); delete S.exams[k.id]; await wdelete("task/" + k.id); delete S.tasks[k.id]; }
