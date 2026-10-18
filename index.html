@@ -166,6 +166,10 @@ table.proto td,table.proto th{white-space:nowrap;padding-right:14px}
 .tile:hover:not(:disabled){border-color:var(--blue)}
 .tile:focus-visible{outline:3px solid var(--marker);outline-offset:2px}
 .tile.off{opacity:.5;cursor:not-allowed}
+.greetline{margin:0;font-style:italic;color:var(--ink-soft)}
+.greet{font-size:19px;line-height:1.2;margin:0}
+.rank{font-weight:700;font-size:15px;line-height:1.25;color:var(--blue)}
+.tile .rank{font-size:14px}
 .tile .tn{font-family:var(--display);font-weight:700;font-size:21px}
 .av.ph{background-size:cover;background-position:center;background-repeat:no-repeat}
 .av.sm{width:40px;height:40px;font-size:18px}
@@ -915,7 +919,7 @@ function tilesView() {
     if (on) { const p = progressOf(Object.values(S.vocab).flat(), k.id); sub = p.n ? "Gesamt " + p.pct + " %" : "noch keine Vokabeln"; }
     return h("button", { type: "button", class: "tile" + (on ? "" : " off"), disabled: !on, onclick: () => pickTile(k.id) },
       avatar(k),
-      h("span", { class: "tn" }, k.name), h("span", { class: "muted" }, sub),
+      h("span", { class: "tn" }, k.name), on ? h("span", { class: "rank" }, rankOf(k.id)) : null, on ? h("span", { class: "muted", style: "font-size:12px" }, lvlText(k.id)) : null, h("span", { class: "muted" }, sub),
       on && t && t.state === "OFFEN" ? h("span", { class: "pill mid" }, "Übung läuft") : null);
   })));
   if (!activeKids().length) w.append(h("div", { class: "banner warn" }, LOCAL ? "Im Lern-Paket ist keine aktive Person enthalten." : "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“."));
@@ -924,8 +928,9 @@ function tilesView() {
 function personHome(kid, canSwitch) {
   const k = kidsOf().find(x => x.id === kid), w = h("div", { class: "stack" });
   w.append(h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
-    h("div", { class: "row", style: "flex-wrap:nowrap;gap:12px" }, avatar(k), h("div", null, h("h2", null, "Hallo, " + k.name), h("div", { class: "muted" }, "Dein Lernstand"))),
+    h("div", { class: "row", style: "flex-wrap:nowrap;gap:12px" }, avatar(k), h("div", null, h("h2", { class: "greet" }, greetingFor(kid, k.name).title), h("div", { class: "rank" }, rankOf(kid)), h("div", { class: "muted" }, lvlText(kid)))),
     canSwitch ? h("button", { class: "btn small sec", onclick: () => { S.home = null; renderAll(); window.scrollTo(0, 0); } }, "Andere Person") : null));
+  w.append(h("p", { class: "greetline" }, greetingFor(kid, k.name).line));
   const t = S.tasks[kid];
   if (t) w.append(h("div", { class: "card stack" },
     h("b", null, t.state === "OFFEN" ? "Deine Übung läuft" : "Letzte Übung: " + t.ok + " von " + t.items.length + " richtig"),
@@ -934,7 +939,7 @@ function personHome(kid, canSwitch) {
   { const pp = ptsOf(kid), li = levelInfo(kid), openA = asgOf(kid).filter(a => !a.doneAt);
     w.append(h("div", { class: "card stack" },
       h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
-        h("div", null, h("b", null, fullTitle(li.lt, li.la)), h("div", { class: "muted" }, li.total + (li.total === 1 ? " Punkt" : " Punkte") + " · Titel-Level " + li.lt + ", Adjektiv-Level " + li.la)),
+        h("div", null, h("b", null, li.total + (li.total === 1 ? " Punkt" : " Punkte")), h("div", { class: "muted" }, li.tProg ? "Noch " + li.tProg.left + " Punkte bis „" + TITLES[li.lt][0] + "“" : "Höchster Titel erreicht")),
         h("button", { class: "btn small " + (openA.length ? "" : "sec"), onclick: () => { S.tab = "ziele"; renderAll(); window.scrollTo(0, 0); } }, openA.length ? openA.length + (openA.length === 1 ? " offener Auftrag" : " offene Aufträge") : "Ziele")),
       pbar(li.tProg ? li.tProg.pct : 100))); }
   readyChapters(kid).forEach(r => w.append(readyCard(r, kid)));
@@ -2559,6 +2564,7 @@ function ptsOf(kid) {
   return { total: by[1] + by[2] + by[3], by, perf, lv: p.lv, ev: p.ev.filter(e => e[2] !== 4).sort((a, b) => b[1] - a[1]) };
 }
 function fullTitle(lt, la) { const [t, g] = TITLES[lt - 1], a = ADJ[la - 1]; return a.charAt(0).toUpperCase() + a.slice(1) + (g === "f" ? "e" : g === "n" ? "es" : "er") + " " + t; }
+const rankOf = kid => { const i = levelInfo(kid); return fullTitle(i.lt, i.la); };
 function levelInfo(kid) {
   const f = profFactor(kid), tp = thresholds(LVL_P, f, 5), te = thresholds(LVL_E, f, 1), p = ptsOf(kid);
   const calc = (thr, v) => { let l = 1; for (let i = 1; i < thr.length; i++) if (v >= thr[i]) l = i + 1; return l; };
@@ -2851,6 +2857,29 @@ function animSwitch(kid) {
     rm ? h("div", { class: "muted", style: "font-size:13px" }, "Dein Gerät hat „Bewegung reduzieren“ eingestellt, deshalb gibt es keine Animationen.") : null,
     on ? h("button", { class: "btn sec small", type: "button", onclick: () => celebrate({ kind: "level", kid, main: fullTitle(levelInfo(kid).lt, levelInfo(kid).la), sub: "So sieht eine Feier aus" }) }, "Animation ansehen") : null);
 }
+
+/* ------------------------------------------------------------------ Begrüßung nach Tageszeit (Geräteuhr) */
+const greetSlot = hr => hr >= 5 && hr < 11 ? "morgen" : hr >= 11 && hr < 14 ? "mittag" : hr >= 14 && hr < 17 ? "nachmittag" : hr >= 17 && hr < 22 ? "abend" : "nacht";
+const GREET = {
+  morgen: { t: ["Guten Morgen, {n}!", "Morgen, {n}! Schon wach?", "Moin, {n}!", "Guten Morgen, {n}. Der Wortschatz wartet."],
+    l: ["Kaffee oder Vokabeln? Am besten beides.", "Die Vokabeln haben schon gewartet. Und nicht gerade leise.", "Wer früh lernt, hat mittags mehr Zeit für Unfug.", "Noch ein bisschen müde? Die Vokabeln sind es nicht.", "Heute wird bestimmt ein fehlerfreier Tag. Vermutlich."] },
+  mittag: { t: ["Guten Mittag, {n}!", "Mahlzeit, {n}!", "{n}, Mittagspause oder Lernpause?"],
+    l: ["Erst Vokabeln, dann Nachtisch.", "Mit vollem Bauch lernt es sich schlecht. Mit leerem aber auch.", "Ein paar Wörter zwischen zwei Bissen, das schafft nur ein Profi.", "Das Mittagessen läuft nicht weg. Die Vokabeln werden aber ungeduldig."] },
+  nachmittag: { t: ["Guten Tag, {n}!", "Na, {n}, Nachmittagstief?", "Hallo {n}, schön, dass du da bist."],
+    l: ["Das Nachmittagstief verliert gegen Vokabeln.", "Noch ein Päuschen? Nein? Gut, dann los.", "Ein paar Wörter jetzt, und der Abend gehört dir.", "Die Hausaufgaben waren übrigens nie weg."] },
+  abend: { t: ["Guten Abend, {n}!", "Na, {n}, noch Energie übrig?", "Abendschicht, {n}!"],
+    l: ["Ein paar Vokabeln vor dem Abendessen schaden nie.", "Der Tag war lang, die Wörter sind kurz.", "Heute noch ein bisschen Ruhm sammeln?", "Das Sofa kann warten. Die Level nicht."] },
+  nacht: { t: ["Noch wach, {n}?", "Nachtschicht, {n}!", "Mitternachtsvokabeln, {n}?"],
+    l: ["Eigentlich solltest du schlafen. Aber gut, nur kurz.", "Die Eule in dir ist beeindruckt.", "Nachts lernt es sich heimlich am besten. Pssst.", "Gleich ab ins Bett, versprochen? Wirklich?"] }
+};
+function greetingFor(kid, name) {
+  const slot = greetSlot(new Date().getHours()), key = kid + "|" + slot, g = GREET[slot];
+  S.greet = S.greet || {};
+  if (!S.greet[key]) S.greet[key] = { t: Math.floor(Math.random() * g.t.length), l: Math.floor(Math.random() * g.l.length) };   /* bleibt pro Sitzung und Tageszeit gleich */
+  const c = S.greet[key];
+  return { slot, title: g.t[c.t].replace(/\{n\}/g, name), line: g.l[c.l] };
+}
+const lvlText = kid => { const i = levelInfo(kid); return "Level " + i.lt + " · Adjektiv " + i.la; };
 
 async function exportBackup() {
   if (!S.dl) { toast("Speichern von Dateien ist hier nicht verfügbar."); return; }
