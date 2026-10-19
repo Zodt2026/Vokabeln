@@ -54,6 +54,7 @@ h1,h2,h3{font-family:var(--display);font-weight:700;margin:0;letter-spacing:-.01
 h1{font-size:26px} h2{font-size:21px} h3{font-size:17px}
 .wrap{max-width:1100px;margin:0 auto;padding:0 20px 240px}
 body.kb nav.tabs,body.kb .actionbar{display:none}
+body.kb .wrap{padding-bottom:100vh}
 header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 0 12px}
 header.top .brand{display:flex;align-items:baseline;gap:10px;min-width:0}
 .sync{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-soft);white-space:nowrap}
@@ -72,6 +73,7 @@ header.top .brand{display:flex;align-items:baseline;gap:10px;min-width:0}
 .q .ans{grid-column:2/4;margin-top:8px}
 .seg{display:flex;gap:4px;padding:4px;background:var(--card);border:1.5px solid var(--line);border-radius:14px;margin:0 0 14px}
 .seg button{flex:1;min-height:44px;border:0;border-radius:10px;background:transparent;font-weight:600;cursor:pointer;color:var(--ink-soft)}
+.seg.wrap{flex-wrap:wrap}.seg.wrap button{flex:1 1 42%}
 .seg button[aria-pressed=true]{background:var(--marker);color:var(--marker-ink)}
 .errs{margin:6px 0 0;padding-left:18px;font-size:15px}
 .errs li{margin:3px 0;overflow-wrap:anywhere}
@@ -196,6 +198,17 @@ tr.chapr td{background:var(--ok-bg)}tr.chapm td{background:var(--warn-bg)}
 @keyframes cspin{from{transform:rotate(-12deg) scale(1)}to{transform:rotate(12deg) scale(1.15)}}
 @keyframes cfall{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:1;transform:translate(var(--dx),108vh) rotate(var(--r))}}
 @media (prefers-reduced-motion:reduce){.celeb{display:none}}
+details.acc>summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;font-family:var(--display);font-weight:700;font-size:20px;min-height:44px}
+details.acc>summary::-webkit-details-marker{display:none}
+details.acc>summary::after{content:"▸";font-size:18px;color:var(--ink-soft)}
+details.acc[open]>summary::after{content:"▾"}
+.kinds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.kind{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px;background:var(--card);border:1.5px solid var(--line);border-radius:14px;color:var(--ink);cursor:pointer;text-align:center;font:inherit}
+.kind.on{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue) inset}.kind:disabled{opacity:.6;cursor:not-allowed}.kind .muted{font-size:12px}
+.kind b{font-size:14px;max-width:100%;hyphens:manual}.kind{padding:12px 4px}.kind .pill{font-size:10px;padding:2px 6px;white-space:normal}
+@media (max-width:420px){.kind b{font-size:13px}.kind .muted{font-size:11px}}
+@media (max-width:340px){.kind b{font-size:12px}}
+.hearbtn{font-size:18px;min-height:52px}
 .pill.gift{background:#fff1b8;color:#5a4400;white-space:normal}
 @media (max-width:480px){nav.tabs button{font-size:12.5px}}
 table.v.sm tbody tr{cursor:pointer}
@@ -353,7 +366,7 @@ const uid = () => "l" + Date.now().toString(36) + Math.random().toString(36).sli
 const BLOCK = 100, MAXV = 1500, QCOUNT = 30;
 const fmtShort = ts => new Date(ts).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 const fmtDate = ts => new Date(ts).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const dirLabel = d => d === "d2f" ? "Deutsch → Fremdsprache" : d === "mix" ? "Gemischt (beide Richtungen)" : "Fremdsprache → Deutsch";
+const dirLabel = d => d === "d2f" ? "Deutsch → Fremdsprache" : d === "mix" ? "Gemischt (beide Richtungen)" : d === "h2f" ? "Hören → wiedergeben" : d === "h2d" ? "Hören → übersetzen" : "Fremdsprache → Deutsch";
 
 /* ------------------------------------------------------------------ Zustand */
 const LOCAL = !!window.VT_LOCAL;   /* Lern-Version: läuft ohne Claude, Daten nur auf diesem Gerät, nur Lernen */
@@ -362,7 +375,7 @@ const S = {
   booted: false, sync: "wait", settings: null, settingsLoaded: false,
   tasks: {}, kid: null, taskLoaded: false, vocabLoaded: false,
   vocab: {}, blockDocs: {}, log: [],
-  tab: "start", home: null, hlang: null, hdir: {}, vlang: null, vq: "", vlimit: 60, logKid: "all", lastTag: ["", "", "", ""], vtag: ["", "", "", ""], vopen: false, vsel: new Set(), vselMode: false,
+  tab: "start", home: null, hlang: null, hdir: {}, hkind: {}, vlang: null, vq: "", vlimit: 60, logKid: "all", lastTag: ["", "", "", ""], vtag: ["", "", "", ""], vopen: false, vsel: new Set(), vselMode: false,
   exams: {}, examLog: [], examLoaded: false, mode: "lernen", finalizing: false, finalFail: 0, asgs: {}, pts: {}, chap: {}, authed: {}, pinFail: {},
   parentUntil: 0, fails: 0, lockedUntil: 0, busy: false, migrating: false
 };
@@ -395,7 +408,6 @@ const touchParent = () => { if (parentOn()) S.parentUntil = Date.now() + 5 * 60 
 const SCHULARTEN = ["Gym", "Real", "Haupt"];
 const tg = w => (Array.isArray(w.t) ? [w.t[0] || "", w.t[1] || "", w.t[2] || "", w.t[3] || ""] : ["", "", "", ""]);
 const natCmp = (a, b) => String(a).localeCompare(String(b), "de", { numeric: true });
-const tagText = t => [t[0], t[1] ? "Klasse " + t[1] : "", t[3] || "", t[2] ? (t[2].includes("|") ? "Lektionen " : "Lektion ") + t[2].split("|").join(", ") : ""].filter(Boolean).join(" · ");
 const fltLabel = f => {
   if (!f) return "";
   const a = [f.s || "", f.k || "", f.l || "", f.b || "-"];
@@ -494,7 +506,7 @@ async function createTask(kid, lang, dir, from, to, flt, tips, sel, extra) {
   if (mode === "tags") { from = 1; to = MAXV; }
   const { items } = drawItems(lang, dir, from, to, kid, f2, !(extra && (extra.src === "admin" || extra.src === "asg")));
   if (!items.length) { toast("Im gewählten Bereich sind keine passenden Vokabeln eingetragen."); return false; }
-  const task = { kid, kidName: kidName(kid), state: "OFFEN", lang, langName, dir, from, to, flt: f2, sel: mode, tips: !!tips, rep: 0, created: Date.now(), counted: false, src: (extra && extra.src) || "self", ...(extra && extra.asg ? { asg: extra.asg } : {}), items };
+  const task = { kid, kidName: kidName(kid), state: "OFFEN", lang, langName, dir, from, to, flt: f2, sel: mode, tips: !!tips, rep: 0, created: Date.now(), counted: false, src: (extra && extra.src) || "self", ...(extra && extra.asg ? { asg: extra.asg } : {}), plays: (extra && extra.plays) || 0, items };
   await wset("task/" + kid, task);
   S.tasks[kid] = task;
   return true;
@@ -580,9 +592,9 @@ async function finalizeCounts(kid) {
   await saveWords(t.lang, words);
   await wset("log/s" + t.created + "_" + kid, { ts: t.submitted, kid, kidName: kidName(kid), lang: t.lang, langName: t.langName, dir: t.dir, from: t.from, to: t.to, n: t.items.length, ok: t.ok, bad: t.bad, rep: t.rep || 0, flt: t.flt || null, sel: selMode(t), items: t.items.map(i => [i.q, i.a || "", i.s, i.ok ? 1 : 0, i.tip || 0]) });
   let pts = 0;
-  if (!((t.rep || 0) >= 1)) {      /* Wiederholung derselben Vokabeln: keine Punkte, kein Auftragsfortschritt */
+  if (!((t.rep || 0) >= 1)) {      /* Wiederholung derselben Vokabeln: keine Punkte, kein Herausforderungsfortschritt */
     const pct = 100 * t.ok / Math.max(1, t.items.length);
-    if (pct + 1e-9 >= PT.min) { const cat = (t.src === "admin" || t.asg) ? 2 : 1; pts = cat === 2 ? PT.asg : PT.own; await awardPoints(kid, "t" + t.created, cat, pts, ptLabel(t), taskMeta(t)); }
+    if (pct + 1e-9 >= PT.min) { const cat = (t.src === "admin" || t.asg) ? 2 : 1; pts = isHear(t.dir) ? (cat === 2 ? PTH.asg : PTH.own) : (cat === 2 ? PT.asg : PT.own); await awardPoints(kid, "t" + t.created, cat, pts, ptLabel(t), taskMeta(t)); }
     if (t.asg) await creditAsg(t.asg, "t" + t.created, pct);
     await recordChapRun(kid, t, pct);
   }
@@ -647,9 +659,9 @@ async function continueTask(mode) {
     if (mode === "same") {
       const items = cur.items.map(i => ({ n: i.n, f: i.f, d: i.d, q: i.q, s: i.s, a: "", ok: null }));
       for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-      const task = { kid, kidName: kidName(kid), state: "OFFEN", lang: cur.lang, langName: cur.langName, dir: cur.dir, from: cur.from, to: cur.to, flt: cur.flt || { s: "", k: "", l: "", b: "" }, sel: selMode(cur), tips: !!cur.tips, rep: (cur.rep || 0) + 1, created: Date.now(), counted: false, src: cur.src || "self", ...(cur.asg ? { asg: cur.asg } : {}), items };
+      const task = { kid, kidName: kidName(kid), state: "OFFEN", lang: cur.lang, langName: cur.langName, dir: cur.dir, from: cur.from, to: cur.to, flt: cur.flt || { s: "", k: "", l: "", b: "" }, sel: selMode(cur), tips: !!cur.tips, rep: (cur.rep || 0) + 1, created: Date.now(), counted: false, src: cur.src || "self", ...(cur.asg ? { asg: cur.asg } : {}), plays: cur.plays || 0, items };
       await wset("task/" + kid, task); S.tasks[kid] = task;
-    } else if (!(await createTask(kid, cur.lang, cur.dir, cur.from, cur.to, cur.flt, cur.tips, selMode(cur), { src: cur.src, asg: cur.asg }))) {
+    } else if (!(await createTask(kid, cur.lang, cur.dir, cur.from, cur.to, cur.flt, cur.tips, selMode(cur), { src: cur.src, asg: cur.asg, plays: cur.plays }))) {
       toast("Neue Aufgabe konnte nicht gestartet werden – bitte den Administrator fragen.");
     }
   } catch (e) { toastErr(e, "Neustart fehlgeschlagen."); }
@@ -737,9 +749,17 @@ document.addEventListener("pointerdown", () => { ptrDown = true; }, true);
 document.addEventListener("pointerup", () => { setTimeout(() => { ptrDown = false; }, 350); }, true);
 document.addEventListener("focusout", () => { setTimeout(flushPending, 450); });
 /* Fokussiertes Eingabefeld sichtbar halten (nicht von Leisten oder Tastatur verdeckt) */
-function keepVisible(el) {
-  [80, 420].forEach(ms => setTimeout(() => { if (document.activeElement === el) el.scrollIntoView({ block: "center", behavior: "smooth" }); }, ms));
+/* Aktuelle Karte (Wort, Eingabe, Tipp) mittig im sichtbaren Bereich über der Tastatur; ist sie höher als der Platz, steht ihr Anfang mit dem Wort oben */
+function centerCard(el) {
+  const card = (el.closest && el.closest(".card.q")) || el, vv = window.visualViewport, vh = vv ? vv.height : window.innerHeight, vt = vv ? vv.offsetTop : 0;
+  const r = card.getBoundingClientRect(), m = 12, delta = r.height >= vh - 2 * m ? r.top - (vt + m) : (r.top + r.height / 2) - (vt + vh / 2);
+  if (Math.abs(delta) > 3) window.scrollBy({ top: delta, behavior: "smooth" });
 }
+function keepVisible(el) {
+  [60, 300, 650].forEach(ms => setTimeout(() => { if (document.activeElement === el) centerCard(el); }, ms));
+}
+let vvTimer = null;
+if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { const a = document.activeElement; if (a && a.dataset && (a.dataset.key || a.id === "xin")) { clearTimeout(vvTimer); vvTimer = setTimeout(() => { if (document.activeElement === a) centerCard(a); }, 120); } });
 const kbOpen = () => !!(window.visualViewport && (window.innerHeight - window.visualViewport.height) > 140);
 function syncKb() { document.body.classList.toggle("kb", typingNow() && kbOpen()); }
 document.addEventListener("focusin", () => { setTimeout(syncKb, 300); });
@@ -767,6 +787,7 @@ function renderAll() {
   root.append(tabsNav());
   if (S.tab === "lernen" && !gated && !noLogin) { const ab = actionBar(); if (ab) root.append(ab); }
   syncExamTimer();
+  setTimeout(maybeWhatsNew, 200);
   if (keep) { const n = document.querySelector('[data-key="' + keep.key + '"]'); if (n) { n.focus(); try { n.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
   window.scrollTo(0, scroll);
 }
@@ -859,7 +880,7 @@ function progressOf(words, kid) {
 function catProgress(lang, kid) {
   const m = new Map();
   (S.vocab[lang] || []).forEach(w => { const t = tg(w), key = t.join("\u0001"); if (!m.has(key)) m.set(key, { t, words: [] }); m.get(key).words.push(w); });
-  const so = a => SCHULARTEN.indexOf(a) + 1 || 99;
+  const so = a => TAGSA.indexOf(a) + 1 || 99;
   return [...m.values()].map(g => ({ ...g, ...progressOf(g.words, kid) })).filter(g => groupOk(kid, lang, g.t))
     .sort((x, y) => (x.t[0] ? so(x.t[0]) : 100) - (y.t[0] ? so(y.t[0]) : 100) || natCmp(x.t[1], y.t[1]) || natCmp(x.t[2], y.t[2]));
 }
@@ -907,7 +928,7 @@ function personHome(kid, canSwitch) {
     w.append(h("div", { class: "card stack" },
       h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
         h("div", null, h("b", null, li.total + (li.total === 1 ? " Punkt" : " Punkte")), h("div", { class: "muted" }, li.tProg ? "Noch " + li.tProg.left + " Punkte bis „" + TITLES[li.lt][0] + "“" : "Höchster Titel erreicht")),
-        h("button", { class: "btn small " + (openA.length ? "" : "sec"), onclick: () => { S.tab = "ziele"; renderAll(); window.scrollTo(0, 0); } }, openA.length ? openA.length + (openA.length === 1 ? " offener Auftrag" : " offene Aufträge") : "Ziele")),
+        h("button", { class: "btn small " + (openA.length ? "" : "sec"), onclick: () => { S.tab = "ziele"; renderAll(); window.scrollTo(0, 0); } }, openA.length ? openA.length + (openA.length === 1 ? " offene Herausforderung" : " offene Herausforderungen") : "Ziele")),
       pbar(li.tProg ? li.tProg.pct : 100))); }
   if (hasChoices(kid)) w.append(contentCard(kid));
   readyChapters(kid).forEach(r => w.append(readyCard(r, kid)));
@@ -928,11 +949,15 @@ function personHome(kid, canSwitch) {
   })));
 
   const lang = langs.find(l => l.id === S.hlang), cats = catProgress(lang.id, kid), cfg = cfgOf(kid);
-  const dir = S.hdir[kid] || cfg.dir || "f2d";
+  const kind = S.hkind[kid] || "vok", dir = pickDir(kid), speakOk = kind !== "hoer" || canSpeak(lang.id);
+  w.append(h("h3", null, "Wie möchtest du lernen?")); w.append(kindTiles(kid));
   w.append(h("h3", null, lang.name + ": was möchtest du üben?"));
+  if (kind === "hoer" && !ttsSupported()) w.append(h("div", { class: "banner warn" }, "Die Sprachausgabe gibt es in dieser Ansicht oder auf diesem Gerät nicht. Bitte die Lern-Version im Browser nutzen."));
+  else if (kind === "hoer" && !speakOk) w.append(h("div", { class: "banner warn" }, "Für " + lang.name + " gibt es keine Sprachausgabe. Bitte eine andere Sprache wählen."));
+  else if (kind === "hoer" && voiceMissing(lang.id)) w.append(h("div", { class: "banner lock" }, "Auf diesem Gerät ist keine passende Stimme für " + lang.name + " installiert. Es klingt vielleicht nicht richtig."));
   w.append(h("div", { class: "seg", role: "group", "aria-label": "Richtung", style: "margin:0" },
-    [["f2d", "Fremdsprache → Deutsch"], ["d2f", "Deutsch → Fremdsprache"], ["mix", "Gemischt"]].map(([v, l]) => h("button", { type: "button", "aria-pressed": dir === v ? "true" : "false", onclick: () => { S.hdir[kid] = v; renderAll(); } }, l))));
-  w.append(h("button", { class: "btn sec", disabled: !S.canWrite, onclick: () => startSelf(kid, lang.id, null) }, "Gemischt üben (alle Vokabeln)"));
+    (kind === "hoer" ? [["h2d", "Hören → übersetzen"], ["h2f", "Hören → wiedergeben"]] : [["f2d", "Fremdsprache → Deutsch"], ["d2f", "Deutsch → Fremdsprache"], ["mix", "Gemischt"]]).map(([v, l]) => h("button", { type: "button", "aria-pressed": dir === v ? "true" : "false", onclick: () => { S.hdir[kid] = v; renderAll(); } }, l))));
+  w.append(h("button", { class: "btn sec", disabled: !S.canWrite || !speakOk, onclick: () => startSelf(kid, lang.id, null) }, "Gemischt üben (alle Vokabeln)"));
   cats.forEach(c => {
     const label = tagText(c.t) || "Ohne Tags", started = c.tried > 0, ex = examDone(lang.id, kid, c.t), cs = chapState(kid, chapKey(lang.id, c.t));
     const flt = c.t.some(Boolean) ? { s: c.t[0] || "-", k: c.t[1] || "-", l: c.t[2] || "-", b: c.t[3] || "-" } : { s: "-", k: "-", l: "-", b: "-" };
@@ -943,16 +968,17 @@ function personHome(kid, canSwitch) {
         h("span", { class: "pill " + (started ? "ok" : "n") }, started ? "begonnen" : "noch nicht begonnen"), cs.master ? h("span", { class: "pill gift" }, "Gemeistert") : ex ? h("span", { class: "pill ok" }, "Prüfung bestanden ✓") : null, cs.ready ? h("span", { class: "pill ok" }, "Prüfungsreif") : null),
       h("div", { class: "muted" }, "Rating " + starsText(cs.stars) + (cs.ready ? "" : " · 6 Übungen in Folge mit 100 % schalten die Kapitelprüfung frei")),
       cs.ready ? h("button", { class: "btn", style: "background:var(--ok)", disabled: S.busy || !S.canWrite, onclick: () => startChapterExam(kid, lang.id, c.t) }, "Kapitelprüfung starten") : null,
-      h("button", { class: "btn", disabled: !S.canWrite, onclick: () => startSelf(kid, lang.id, flt) }, "Üben")));
+      h("button", { class: "btn", disabled: !S.canWrite || !speakOk, onclick: () => startSelf(kid, lang.id, flt) }, "Üben")));
   });
   w.append(h("p", { class: "muted", style: "margin:0;font-size:13px" }, "So wird der Fortschritt berechnet: Jede Vokabel zählt mit ihrer Trefferquote, voll gewertet ab drei Abfragen. Neue Vokabeln zählen 0 %. Der Wert steigt, je öfter du richtig antwortest."));
+  w.append(h("div", { class: "row", style: "justify-content:space-between;align-items:center" }, h("span", { class: "muted", style: "font-size:13px" }, "Vokabeltrainer v " + APP_VERSION), h("button", { class: "btn small sec", onclick: () => whatsNewDialog(kid) }, "Was ist neu?")));
   return w;
 }
 async function startSelf(kid, lang, flt) {
   if (S.busy) return;
   const run = S.tasks[kid];
   if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Übung ersetzen?", "Deine bisherigen Antworten in der laufenden Übung gehen verloren.", "Neue Übung starten", true))) return;
-  const cfg = cfgOf(kid), dir = S.hdir[kid] || cfg.dir || "f2d";
+  const cfg = cfgOf(kid), dir = pickDir(kid);
   S.busy = true;
   try {
     if (await createTask(kid, lang, dir, 1, MAXV, flt || {}, !!cfg.tips, flt ? "tags" : "range")) { S.mode = "lernen"; S.tab = "lernen"; toast("Los geht’s!"); }
@@ -995,7 +1021,7 @@ function buildPackage(kidIds, withStats) {
       return [x.f, x.d, x.h || "", c, tg(x)];
     });
   });
-  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, board: Object.fromEntries(activeKids().map(k => [k.id, boardStats(k.id)])), chapPass: chapPass(), chapSecs: chapSecs(), chap: withStats ? Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])) : {}, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
+  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name, ...(typeof l.tts === "string" ? { tts: l.tts } : {}) })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, board: Object.fromEntries(activeKids().map(k => [k.id, boardStats(k.id)])), hjDate: schoolDates().hj ? String(schoolDates().hj.m).padStart(2, "0") + "-" + String(schoolDates().hj.d).padStart(2, "0") : "02-01", jeDate: String(schoolDates().je.m).padStart(2, "0") + "-" + String(schoolDates().je.d).padStart(2, "0"), chapPass: chapPass(), chapSecs: chapSecs(), chap: withStats ? Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])) : {}, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
 }
 const randPw = () => { const al = "abcdefghjkmnpqrstuvwxyz23456789", r = crypto.getRandomValues(new Uint32Array(10)); const t = Array.from(r, x => al[x % al.length]).join(""); return t.slice(0, 5) + "-" + t.slice(5); };
 async function packageDialog() {
@@ -1044,7 +1070,7 @@ function validPackage(p) { return !!(p && p.kind === PKG_KIND && p.v === 1 && Ar
 async function importPackage(pkg, useStats) {
   if (!validPackage(pkg)) throw new Error("Das ist kein Lern-Paket dieser App.");
   const str = (x, n) => String(x == null ? "" : x).slice(0, n);
-  const langs = pkg.langs.slice(0, 20).map(l => ({ id: str(l.id, 40), name: str(l.name, 60) })).filter(l => l.id && l.name);
+  const langs = pkg.langs.slice(0, 20).map(l => ({ id: str(l.id, 40), name: str(l.name, 60), ...(typeof l.tts === "string" ? { tts: str(l.tts, 10) } : {}) })).filter(l => l.id && l.name);
   const kids = pkg.kids.slice(0, 20).map(k => ({ id: str(k.id, 40), name: str(k.name, 60), active: k.active !== false, ...(okPhoto(k.photo) ? { photo: k.photo } : {}), ...(() => { const o = kidsOf().find(x => x.id === str(k.id, 40)), np = cleanProf(k.prof), op = o && cleanProf(o.prof), p = np && op ? mergeProfContent(np, op) : (np || op); return p ? { prof: p } : {}; })() })).filter(k => k.id && k.name);
   if (!langs.length || !kids.length) throw new Error("Das Paket enthält keine Sprache oder keine Person.");
   const ids = kids.map(k => k.id), key = x => x.f + "\u0001" + x.d, cl = a => a.slice(0, 3).map(n => Math.max(0, Math.round(Number(n) || 0)));
@@ -1064,7 +1090,7 @@ async function importPackage(pkg, useStats) {
   for (const l of (cur.langs || []).filter(l => !langs.some(x => x.id === l.id))) await saveWords(l.id, []);
   await wset("app/settings", { v: 2, salt: cur.salt || uid(), pwHash: cur.pwHash || ("x" + uid() + uid()), langs, kids,
     cfgs: pkg.cfgs && typeof pkg.cfgs === "object" ? pkg.cfgs : (cur.cfgs || {}), cfg: pkg.cfg && typeof pkg.cfg === "object" ? pkg.cfg : (cur.cfg || { lang: langs[0].id, dir: "f2d", from: 1, to: 50 }),
-    chapPass: Number(pkg.chapPass) >= 50 && Number(pkg.chapPass) <= 100 ? Math.round(Number(pkg.chapPass)) : (cur.chapPass || 95), chapSecs: pkg.chapSecs != null ? cleanSecs(pkg.chapSecs) : (cur.chapSecs == null ? 15 : cur.chapSecs), board: mergeBoard(cur.board, cleanBoard(pkg.board)) });
+    chapPass: Number(pkg.chapPass) >= 50 && Number(pkg.chapPass) <= 100 ? Math.round(Number(pkg.chapPass)) : (cur.chapPass || 95), chapSecs: pkg.chapSecs != null ? cleanSecs(pkg.chapSecs) : (cur.chapSecs == null ? 15 : cur.chapSecs), board: mergeBoard(cur.board, cleanBoard(pkg.board)), hjDate: validMD(pkg.hjDate) ? pkg.hjDate : (cur.hjDate || "02-01"), jeDate: validMD(pkg.jeDate) ? pkg.jeDate : (cur.jeDate || "07-01") });
   await mergeFromPackage(pkg, ids);
   return { words: total, added, kids: kids.length, langs: langs.length };
 }
@@ -1109,7 +1135,7 @@ function buildFeedback() {
   const asg = Object.values(S.asgs).filter(a => ids.includes(a.kid)).map(a => ({ id: a.id, kid: a.kid, prog: a.prog || {}, doneAt: a.doneAt || null }));
   const pts = Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)]));
   const exams = S.examLog.filter(l => ids.includes(l.kid)).slice(0, 10);
-  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log, asg, pts, exams, chap: Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])), profs: Object.fromEntries(ids.filter(id => profOn(kidObj(id))).map(id => [id, kidObj(id).prof])) };
+  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log, asg, pts, exams, chap: Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])), profs: Object.fromEntries(ids.filter(id => profOn(kidObj(id))).map(id => [id, kidObj(id).prof])), flags: flagsOut() };
 }
 async function saveFeedback() {
   const fb = buildFeedback(), names = fb.kids.map(k => k.name).join("_").replace(/[^\wäöüÄÖÜß-]+/g, "_").slice(0, 40);
@@ -1127,7 +1153,7 @@ async function copyFeedback() {
 }
 function localFeedbackCard() {
   return h("div", { class: "card stack" }, h("h3", null, "Lernstand an den Administrator schicken"),
-    h("p", { class: "muted", style: "margin:0" }, "Damit dein Lernstand, deine Punkte und deine Aufträge beim Administrator sichtbar werden, speicherst du eine Datei und schickst sie ihm."),
+    h("p", { class: "muted", style: "margin:0" }, "Damit dein Lernstand, deine Punkte und deine Herausforderungen beim Administrator sichtbar werden, speicherst du eine Datei und schickst sie ihm."),
     h("div", { class: "row" }, h("button", { class: "btn sec", onclick: saveFeedback }, "Datei speichern"), h("button", { class: "btn sec", onclick: copyFeedback }, "Als Text kopieren")));
 }
 function validFeedback(f) { return !!(f && f.kind === FB_KIND && f.v === 1 && Array.isArray(f.kids) && f.stats && typeof f.stats === "object" && Array.isArray(f.log)); }
@@ -1186,12 +1212,20 @@ async function applyFeedback(fb) {
       items: (Array.isArray(e.items) ? e.items : []).slice(0, EXAM_MAX).map(a => [str(a[0], 200), str(a[1], 200), str(a[2], 200), a[3] ? 1 : 0, 0]) };
     await wset("exam_log/r" + doc.ts + "_" + doc.kid, doc); nEx++;
   }
+  let nFlag = 0;
+  { const byLang = {};
+    for (const fl of (Array.isArray(fb.flags) ? fb.flags : []).slice(0, 300)) {
+      if (!fl || !langIds.has(fl.lang)) continue;
+      const arr = byLang[fl.lang] || (byLang[fl.lang] = wordsOf(fl.lang)), i = arr.findIndex(x => x.f === fl.f && x.d === fl.d && !x.m);
+      if (i < 0) continue; arr[i] = { ...arr[i], m: { ts: Number(fl.ts) || Date.now(), k: str(fl.k, 60), a: str(fl.a, 80) } }; nFlag++;
+    }
+    for (const l of Object.keys(byLang)) await saveWords(l, byLang[l]); }
   let nProf = 0;
   { const adopt = {};
     for (const k of kids) { const kk = kidObj(k.id), raw = fb.profs && typeof fb.profs === "object" && fb.profs[k.id]; if (!kk || !raw) continue; const p = cleanProf(raw); if (!p || !p.langs.every(l => langIds.has(l.id))) continue;
       if (!profOn(kk)) adopt[k.id] = { ...p, extra: [], extraBooks: [] }; else { const m = mergeProfContent(cleanProf(kk.prof), p); if (JSON.stringify(m) !== JSON.stringify(cleanProf(kk.prof))) adopt[k.id] = m; } }
     if (Object.keys(adopt).length) { await wupdate("app/settings", { kids: kidsOf().map(x => adopt[x.id] ? { ...x, prof: adopt[x.id] } : x) }); nProf = Object.keys(adopt).length; } }
-  return { upd, missing, logs, kids: kids.length, pts: nPts, asg: nAsg, exams: nEx, profs: nProf };
+  return { upd, missing, logs, kids: kids.length, pts: nPts, asg: nAsg, exams: nEx, profs: nProf, flags: nFlag };
 }
 async function importFeedbackDialog() {
   await modal("Lernstand einlesen", (box, close) => {
@@ -1207,7 +1241,7 @@ async function importFeedbackDialog() {
       close(true);
       const ok = await confirmBox("Lernstand einlesen?", "Von: " + sm.kids.map(k => k.name).join(", ") + ". Stand vom " + fmtShort(Date.parse(fb.created) || Date.now()) + ". " + sm.words + " Vokabeln mit Lernstand, " + sm.logs + " Übungen fürs Protokoll. Bei jeder Vokabel gilt der Stand mit mehr Abfragen; nichts wird doppelt gezählt." + (sm.other ? " " + sm.other + " Person(en) aus der Datei gibt es hier nicht und werden übersprungen." : ""), "Einlesen");
       if (!ok) return;
-      try { const r = await applyFeedback(fb); toast("Eingelesen: " + r.upd + " Vokabelstände aktualisiert, " + r.logs + " Übungen im Protokoll" + (r.exams ? ", " + r.exams + (r.exams === 1 ? " Prüfung" : " Prüfungen") : "") + (r.pts ? ", Punkte von " + r.pts + (r.pts === 1 ? " Person" : " Personen") : "") + (r.asg ? ", Fortschritt bei " + r.asg + (r.asg === 1 ? " Auftrag" : " Aufträgen") : "") + (r.profs ? ", Profil von " + r.profs + (r.profs === 1 ? " Person" : " Personen") : "") + "." + (r.missing ? " " + r.missing + " Vokabeln nicht gefunden (inzwischen geändert)." : "")); renderAll(); }
+      try { const r = await applyFeedback(fb); toast("Eingelesen: " + r.upd + " Vokabelstände aktualisiert, " + r.logs + " Übungen im Protokoll" + (r.exams ? ", " + r.exams + (r.exams === 1 ? " Prüfung" : " Prüfungen") : "") + (r.pts ? ", Punkte von " + r.pts + (r.pts === 1 ? " Person" : " Personen") : "") + (r.asg ? ", Fortschritt bei " + r.asg + (r.asg === 1 ? " Herausforderung" : " Herausforderungen") : "") + (r.profs ? ", Profil von " + r.profs + (r.profs === 1 ? " Person" : " Personen") : "") + (r.flags ? ", " + r.flags + (r.flags === 1 ? " gemeldete Vokabel" : " gemeldete Vokabeln") : "") + "." + (r.missing ? " " + r.missing + " Vokabeln nicht gefunden (inzwischen geändert)." : "")); renderAll(); }
       catch (e) { toastErr(e, "Das Einlesen ist fehlgeschlagen."); }
     };
     box.append(h("p", { class: "muted", style: "margin:0" }, "Wähle die Lernstand-Datei (.json), die du aus der Lern-Version bekommen hast."), file, ta,
@@ -1271,7 +1305,9 @@ function lernenView() {
   const t = S.tasks[S.kid], wrap = h("div", { class: "lern" });
   if (!S.kid) { wrap.append(h("div", { class: "span banner warn" }, "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“.")); return wrap; }
   if (!t) {
-    wrap.append(h("div", { class: "span banner lock" }, "Noch keine Aufgabe" + (multiKids() ? " für " + kidName(S.kid) : "") + ". Starte eine Übung auf der Startseite oder aus einem Auftrag unter „Ziele“."));
+    wrap.append(h("div", { class: "span stack" }, h("h3", null, "Wie möchtest du lernen?"), kindTiles(S.kid)));
+    wrap.append(h("div", { class: "span banner lock" }, "Noch keine Aufgabe" + (multiKids() ? " für " + kidName(S.kid) : "") + ". Starte eine Übung auf der Startseite oder aus einer Herausforderung unter „Ziele“."));
+    wrap.append(h("div", { class: "span" }, h("button", { class: "btn", onclick: () => { S.tab = "start"; renderAll(); window.scrollTo(0, 0); } }, "Weiter zur Auswahl")));
     return wrap;
   }
   const open = t.state === "OFFEN";
@@ -1299,7 +1335,7 @@ function pruefungView() {
   const t = S.exams[S.kid];
   wrap.append(examStatsCard());
   if (!t) {
-    wrap.append(h("div", { class: "span banner lock" }, "Keine Prüfung gestartet" + (multiKids() ? " für " + kidName(S.kid) : "") + (LOCAL ? ". Prüfungen startest du unter „Ziele“ aus einem Auftrag." : ". Prüfungen startet der Administrator im Bereich „Admin“, oder du startest sie aus einem Auftrag unter „Ziele“.")));
+    wrap.append(h("div", { class: "span banner lock" }, "Keine Prüfung gestartet" + (multiKids() ? " für " + kidName(S.kid) : "") + (LOCAL ? ". Prüfungen startest du unter „Ziele“ aus einer Herausforderung." : ". Prüfungen startet der Administrator im Bereich „Admin“, oder du startest sie aus einer Herausforderung unter „Ziele“.")));
     return wrap;
   }
   const open = t.state === "OFFEN";
@@ -1356,7 +1392,7 @@ function renderItems(wrap, t, open) {
     inp.addEventListener("input", () => { curT().items[i].a = inp.value; scheduleAnswerSave(); updateProgress(); });
     inp.addEventListener("blur", () => flushAnswers());
     inp.addEventListener("focus", () => keepVisible(inp));
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const nx = document.querySelector('[data-key="a' + (i + 1) + '"]'); if (nx) nx.focus(); else inp.blur(); } });
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const nx = document.querySelector('[data-key="a' + (i + 1) + '"]'); if (nx) nx.focus({ preventScroll: true }); else inp.blur(); } });
     const hintEl = h("div", { class: "tip", "aria-live": "polite" });
     const tipBtn = h("button", { type: "button", class: "btn small sec", "aria-label": "Tipp zu Aufgabe " + (i + 1) }, "Tipp");
     const syncTip = () => {
@@ -1373,7 +1409,7 @@ function renderItems(wrap, t, open) {
     const syncFlag = () => { fb.textContent = flagged ? "⚑ Gemeldet, wird überprüft (zum Zurücknehmen tippen)" : "⚑ Vokabel falsch erfasst?"; fb.classList.toggle("on", flagged); fb.setAttribute("aria-pressed", flagged ? "true" : "false"); };
     fb.addEventListener("click", async () => {
       if (!S.canWrite || fb.disabled) return; fb.disabled = true;
-      try { const on = await toggleFlag(t.lang, it, curT() && curT().items[i] ? curT().items[i].a : it.a); if (on !== null) { flagged = on; toast(on ? "Danke! Die Vokabel wird überprüft." : "Meldung zurückgenommen."); } }
+      try { const on = await toggleFlag(t.lang, it, curT() && curT().items[i] ? curT().items[i].a : it.a); if (on !== null) { flagged = on; toast(on ? (LOCAL ? "Danke! Die Meldung geht mit deiner Lernstand-Datei an den Administrator." : "Danke! Die Vokabel wird überprüft.") : "Meldung zurückgenommen."); } }
       catch (e) { toastErr(e, "Die Meldung konnte nicht gespeichert werden."); }
       fb.disabled = false; syncFlag();
     });
@@ -1382,12 +1418,12 @@ function renderItems(wrap, t, open) {
     const ansRow = h("div", { class: "ans ansrow" }, df ? ansView(df, i) : inp, tipBtn);
     wrap.append(h("div", { class: "card q" + cls },
       h("div", { class: "nr" }, String(i + 1)),
-      h("div", { class: "txt" }, it.q),
+      h("div", { class: "txt" }, isHear(t.dir) && open ? hearBtn(t, i, t.plays || 0) : it.q),
       !open ? h("span", { class: "res " + (it.ok ? "ok" : "bad") }, it.ok ? "✓ richtig" : "✗ falsch") : null,
       ansRow, hintEl,
       !open && !it.ok ? h("div", { class: "sol" }, "Lösung: ", h("b", null, it.s)) : null,
       !open && it.tip ? h("div", { class: "sol" }, "Tipp genutzt (" + it.tip + " von 2)") : null,
-      LOCAL ? null : h("div", { class: "flagrow" }, fb)));
+      h("div", { class: "flagrow" }, fb)));
   });
 }
 function answeredCount() { const t = curT(); return t ? t.items.filter(i => norm(i.a)).length : 0; }
@@ -1471,35 +1507,59 @@ function vokabelnView() {
   // Filter + Liste
   const q = h("input", { type: "text", placeholder: "Suchen …", value: S.vq, "data-key": "vq" });
   q.addEventListener("input", () => { S.vq = q.value; S.vlimit = 60; renderAll(); });
+  const sortSel = h("select", { "aria-label": "Ansicht", onchange: e => { S.vsort = e.target.value; renderAll(); } }, h("option", { value: "nr", selected: S.vsort !== "neu" }, "Ansicht: der Reihe nach (Nr.)"), h("option", { value: "neu", selected: S.vsort === "neu" }, "Ansicht: zuletzt hinzugefügt zuerst"));
   const tv = tagValues(S.vlang, hideSa ? S.kid : null), needle = norm(S.vq);
   const mk = (i, label, fmt) => h("select", { "aria-label": label, onchange: e => { S.vtag[i] = e.target.value; S.vlimit = 60; renderAll(); } },
     h("option", { value: "" }, label + ": alle"), h("option", { value: "-", selected: S.vtag[i] === "-" }, label + ": ohne"),
     tv[i].map(v => h("option", { value: v, selected: S.vtag[i] === v }, fmt(v))));
   const filterRow = tv.some(a => a.length) || S.vtag.some(Boolean)
-    ? h("div", { class: "row" }, h("div", { class: "grow" }, mk(0, "Schulart", v => v)), h("div", { class: "grow" }, mk(1, "Klasse", v => "Klasse " + v)), h("div", { class: "grow" }, mk(2, "Lektion", v => "Lektion " + v)), h("div", { class: "grow" }, mk(3, "Lehrbuch", v => v)),
+    ? h("div", { class: "row" }, h("div", { class: "grow" }, mk(0, "Schulart", saText)), h("div", { class: "grow" }, mk(1, "Klasse", v => "Klasse " + v)), h("div", { class: "grow" }, mk(2, "Lektion", lessonText)), h("div", { class: "grow" }, mk(3, "Lehrbuch", v => v)),
         S.vtag.some(Boolean) ? h("button", { class: "btn small sec", onclick: () => { S.vtag = ["", "", "", ""]; renderAll(); } }, "Filter löschen") : null) : null;
   const rows = []; words.forEach((x, i) => { if (vMatch(x, S.vtag) && (!hideSa || wordOk(S.kid, S.vlang, x)) && (!needle || norm(x.f).includes(needle) || norm(x.d).includes(needle))) rows.push([x, i]); });
+  if (S.vsort === "neu") rows.reverse();                                   /* zuletzt hinzugefügt = höchste Nummer zuerst */
   const sm = S.vselMode;
   const shownSel = () => rows.filter(([, i]) => S.vsel.has(i)).length, hiddenSel = () => S.vsel.size - shownSel();
   const cnt = h("b", { "aria-live": "polite" });
   const applyBtn = h("button", { class: "btn parent small", type: "button", onclick: tagChangeDialog }, "Kategorie ändern …");
   const refresh = () => { cnt.textContent = S.vsel.size + " ausgewählt" + (hiddenSel() > 0 ? " (" + hiddenSel() + " ausgeblendet)" : ""); applyBtn.disabled = !S.vsel.size || !S.canWrite; };
+  const trMap = new Map(), order = [];
+  const setSel = (i, on) => { const e = trMap.get(i); if (on) S.vsel.add(i); else S.vsel.delete(i); if (e) { e.cb.checked = on; e.tr.classList.toggle("selrow", on); } };
   const tbl = h("table", { class: "v" + (sm ? " sm" : "") }, h("thead", null, h("tr", null, [sm ? "✓" : null, "Nr.", "Vokabel", multiKids() ? "Quote " + kidName(S.kid) : "Quote", sm ? null : ""].filter(x => x !== null).map(x => h("th", null, x)))),
     h("tbody", null, rows.slice(0, S.vlimit).map(([x, i]) => {
       const cc = ctr(x, S.kid), a = cc[0], pct = a ? Math.round(100 * cc[1] / a) : null, t = tg(x);
-      const cb = sm ? h("input", { type: "checkbox", checked: S.vsel.has(i), "aria-label": "Vokabel " + (i + 1) + " auswählen", style: "width:22px;height:22px;min-height:0" }) : null;
-      const tr = h("tr", { class: sm && S.vsel.has(i) ? "selrow" : null }, sm ? h("td", null, cb) : null, h("td", { class: "n" }, String(i + 1)),
+      const cb = sm ? h("input", { type: "checkbox", checked: S.vsel.has(i), "aria-label": "Vokabel " + (i + 1) + " auswählen", style: "width:22px;height:22px;min-height:0;pointer-events:none" }) : null;
+      const tr = h("tr", { class: sm && S.vsel.has(i) ? "selrow" : null, "data-i": String(i) }, sm ? h("td", { class: "selc", style: "touch-action:none;cursor:pointer;user-select:none" }, cb) : null, h("td", { class: "n" }, String(i + 1)),
         h("td", null, h("div", null, h("b", null, x.f), x.m ? h("span", { class: "pill mid", style: "margin-left:8px" }, "gemeldet") : null), h("div", null, x.d), x.h ? h("div", { class: "muted" }, x.h) : null, t.some(Boolean) ? h("div", { class: "muted" }, tagText(t)) : null),
         h("td", { class: "s" }, a ? h("span", { class: "pill " + (pct >= 80 ? "ok" : pct >= 50 ? "mid" : "bad") }, pct + " %") : "–", h("div", null, a ? a + "× abgefragt" : "")),
         sm ? null : h("td", null, h("button", { class: "btn small sec", onclick: () => editWord(i), "aria-label": "Bearbeiten" }, "Ändern")));
+      trMap.set(i, { tr, cb }); order.push(i);
       if (sm) {
-        const toggle = on => { if (on) S.vsel.add(i); else S.vsel.delete(i); cb.checked = on; tr.classList.toggle("selrow", on); refresh(); };
-        cb.addEventListener("change", () => toggle(cb.checked));
-        tr.addEventListener("click", e => { if (e.target !== cb) toggle(!S.vsel.has(i)); });
+        cb.addEventListener("change", () => { setSel(i, cb.checked); refresh(); });
+        tr.addEventListener("click", e => { if (e.target.closest && e.target.closest(".selc")) return; setSel(i, !S.vsel.has(i)); refresh(); });
       }
       return tr;
     })));
+  if (sm) {                                                                 /* Wischen in der ersten Spalte markiert mehrere Zeilen */
+    const pos = new Map(order.map((i, k) => [i, k]));
+    const rowAt = e => { const el = document.elementFromPoint(e.clientX, e.clientY), tr = el && el.closest ? el.closest("tr[data-i]") : null; return tr && trMap.has(+tr.dataset.i) ? +tr.dataset.i : null; };
+    tbl.addEventListener("pointerdown", e => { const td = e.target.closest ? e.target.closest(".selc") : null; if (!td) return; const i = +td.parentElement.dataset.i; vDrag = { on: !S.vsel.has(i), last: i }; setSel(i, vDrag.on); refresh(); e.preventDefault(); });
+    tbl.addEventListener("pointermove", e => {
+      if (!vDrag) return;
+      if (e.clientY < 70) window.scrollBy(0, -14); else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+      const i = rowAt(e); if (i === null || i === vDrag.last) return;
+      const a = pos.get(vDrag.last), b2 = pos.get(i); for (let k = Math.min(a, b2); k <= Math.max(a, b2); k++) setSel(order[k], vDrag.on);
+      vDrag.last = i; refresh();
+    });
+  }
   refresh();
+  const rangeFrom = h("input", { type: "number", min: 1, inputmode: "numeric", placeholder: "von Nr.", value: S.vfrom || "", "aria-label": "Von Nummer", style: "max-width:120px" }), rangeTo = h("input", { type: "number", min: 1, inputmode: "numeric", placeholder: "bis Nr.", value: S.vto || "", "aria-label": "Bis Nummer", style: "max-width:120px" });
+  const pickRange = () => {
+    const a = Math.round(+rangeFrom.value), b2 = Math.round(+rangeTo.value);
+    if (!(a >= 1 && b2 >= 1)) { toast("Bitte „von“ und „bis“ als Nummern eintragen."); return; }
+    S.vfrom = String(a); S.vto = String(b2); const lo = Math.min(a, b2), hi = Math.max(a, b2); let n = 0;
+    rows.forEach(([, i]) => { if (i + 1 >= lo && i + 1 <= hi) { S.vsel.add(i); n++; } });
+    toast(n + (n === 1 ? " Vokabel" : " Vokabeln") + " von Nr. " + lo + " bis " + hi + " ausgewählt."); renderAll();
+  };
   const toolbar = sm ? h("div", { class: "stack" },
     h("div", { class: "row" }, cnt),
     h("div", { class: "row" },
@@ -1507,11 +1567,12 @@ function vokabelnView() {
       h("button", { class: "btn small sec", type: "button", onclick: () => { S.vsel = new Set(); renderAll(); } }, "Keine"),
       applyBtn,
       h("button", { class: "btn small sec", type: "button", onclick: () => { S.vselMode = false; S.vsel = new Set(); renderAll(); } }, "Fertig")),
-    h("p", { class: "muted", style: "margin:0" }, "Tippe auf Zeilen, um sie auszuwählen. Mit Suche und Filter kannst du die Liste vorher eingrenzen und dann „Alle Treffer“ nehmen.")) : null;
+    h("div", { class: "row" }, rangeFrom, rangeTo, h("button", { class: "btn small sec", type: "button", onclick: pickRange }, "Bereich auswählen")),
+    h("p", { class: "muted", style: "margin:0" }, "Tippe auf Zeilen oder wische in der ersten Spalte nach unten oder oben, um mehrere zu markieren. Mit „von Nr. bis Nr.“ wählst du einen Nummernbereich unter den sichtbaren Zeilen. Mit Suche und Filter kannst du die Liste vorher eingrenzen und dann „Alle Treffer“ nehmen.")) : null;
   w.append(h("div", { class: "card stack" }, h("div", { class: "row" }, h("h3", { class: "grow" }, (rows.length !== words.length ? rows.length + " von " + words.length : words.length) + " Vokabeln"),
       sm ? null : h("button", { class: "btn small sec", disabled: !S.canWrite || !words.length, onclick: () => { S.vselMode = true; renderAll(); } }, "Auswählen"),
       sm ? null : h("button", { class: "btn small sec", disabled: !S.canWrite || !words.length, onclick: bulkTagDialog }, "Tags für Bereich …")),
-    filterRow, q, toolbar,
+    filterRow, q, sortSel, toolbar,
     rows.length ? h("div", { class: "scroll" }, tbl) : h("div", { class: "empty" }, words.length ? "Keine Treffer." : "Noch keine Vokabeln. Trage oben die erste ein."),
     rows.length > S.vlimit ? h("button", { class: "btn sec", onclick: () => { S.vlimit += 100; renderAll(); } }, "Mehr anzeigen") : null));
   return w;
@@ -1525,6 +1586,12 @@ async function toggleFlag(lang, it, ans) {
   if (on) arr[ix] = { ...arr[ix], m: { ts: Date.now(), k: kidName(S.kid), a: String(ans || "").slice(0, 80) } };
   else { const { m, ...rest } = arr[ix]; arr[ix] = rest; }
   await saveWords(lang, arr); return on;
+}
+/* Meldungen der Person (auch in der Lern-Version) gehen mit der Lernstand-Datei an den Administrator */
+function flagsOut() {
+  const out = [];
+  S.settings.langs.forEach(l => (S.vocab[l.id] || []).forEach(x => { if (x.m && out.length < 200) out.push({ lang: l.id, f: String(x.f).slice(0, 120), d: String(x.d).slice(0, 120), k: String(x.m.k || "").slice(0, 60), a: String(x.m.a || "").slice(0, 80), ts: Number(x.m.ts) || 0 }); }));
+  return out;
 }
 function flaggedWords() {
   const out = [];
@@ -1570,14 +1637,14 @@ async function editWord(i, langArg) {
 }
 /* ---- Vokabeln scannen: Foto -> Claude schreibt mit Schriftgewicht ab -> App trennt Lösung/Hinweis -> prüfen -> übernehmen ---- */
 const scanAvailable = () => !!(S.sample && S.sampleLimits && S.sampleLimits.images);
-const scanPrompt = name => `Das Bild zeigt eine Vokabelseite aus einem Schulbuch oder Heft. Die Fremdsprache ist: ${name}. Erkenne selbst, welche Spalte oder Seite die Fremdsprache und welche die deutsche Übersetzung enthält.
+const scanPrompt = name => `Das Bild zeigt eine Vokabelseite aus einem Schulbuch oder Heft. Es kann auch eine Doppelseite sein (zwei Buchseiten nebeneinander): Lies dann zuerst die ganze linke Seite von oben nach unten, danach die ganze rechte Seite, und mische niemals Zeilen aus beiden Seiten. Die Fremdsprache ist: ${name}. Erkenne selbst, welche Spalte oder Seite die Fremdsprache und welche die deutsche Übersetzung enthält.
 
 Deine Aufgabe ist reines Abschreiben samt Schriftgewicht. Du entscheidest NICHT, was Lösung oder Hinweis ist, das macht die App danach.
 
 Antworte NUR mit einem JSON-Array, ein Objekt je Vokabel, in genau diesem Format:
 [{"f":"...","g":[{"t":"...","b":true},{"t":"...","b":false}],"u":false}]
 
-f = der Ausdruck in der Fremdsprache genau wie gedruckt (Schreibweise, Groß- und Kleinschreibung, Akzente, Längenstriche, Artikel, "to" bei Verben, Zusätze in Klammern). KURSIV gedruckten Text (zum Beispiel m, f, n, Lautschrift, Anmerkungen) lässt du in f weg.
+f = der Ausdruck in der Fremdsprache genau wie gedruckt (Schreibweise, Groß- und Kleinschreibung, Akzente, Längenstriche, Artikel, "to" bei Verben, Zusätze in Klammern). KURSIV gedruckten Text (zum Beispiel m, f, n, Anmerkungen) lässt du in f weg. LAUTSCHRIFT (IPA) gehört NIE zu f, auch wenn sie aufrecht und nicht kursiv gedruckt ist: Alles in eckigen Klammern oder zwischen Schrägstrichen mit Zeichen wie ə ɪ ʊ æ ɒ ʌ ɔ ʃ ʒ θ ð ŋ ˈ ˌ ː lässt du komplett weg, zum Beispiel ergibt gedruckt \"apple [ˈæpl]\" nur \"apple\". Ganze Beispielsätze gehören weder zu f noch zu g.
 
 g = der vollständige deutsche Text dieser Vokabel genau wie gedruckt, zerlegt in Teile. Beginne einen neuen Teil an jeder Stelle, an der die Schrift zwischen FETT (b:true) und NORMAL (b:false) wechselt, auch mitten in einem Wort wie "(ver)brennen". Leerzeichen und Satzzeichen bleiben in t erhalten, ein Komma oder Semikolon bekommt die Schrift des Wortes direkt davor. Alle t zusammen ergeben genau den gedruckten deutschen Text. Kursiver deutscher Text zählt als normal (b:false).
 
@@ -1642,6 +1709,31 @@ function splitDH(toks) {
   const h = groups.filter(g => !g.b).map(g => strip(txt(g))).filter(Boolean).join("; ");
   return { d, h };
 }
+const IPA = "əɪʊʌæɒɔɑɜɐɵʃʒθðŋɹˈˌːˑ", IPA_RE = new RegExp("[" + IPA + "]");
+/* Entfernt Lautschrift aus der Fremdsprache: [ˈæpl], /ˈæpl/, (ˈæpl) und freistehende Wörter mit IPA-Zeichen */
+function stripIPA(v) {
+  let t = String(v == null ? "" : v);
+  t = t.replace(new RegExp("\\s*[\\[/][^\\]/\\[]*[" + IPA + "][^\\]/\\[]*[\\]/]", "g"), " ");
+  t = t.replace(new RegExp("\\s*\\([^)]*[" + IPA + "][^)]*\\)", "g"), " ");
+  t = t.split(/\s+/).filter(w => !IPA_RE.test(w)).join(" ");
+  return t.replace(/\s+/g, " ").trim();
+}
+/* Breite Fotos (Doppelseite): linke und rechte Hälfte getrennt lesen, mit etwas Überlappung in der Mitte */
+async function splitSpread(file) {
+  try {
+    let bmp; try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); } catch (e) { bmp = await createImageBitmap(file); }
+    const w = bmp.width, hh = bmp.height;
+    if (w / hh < 1.5) { if (bmp.close) bmp.close(); return null; }
+    const ov = Math.round(w * 0.04), half = Math.round(w / 2), spans = [[0, half + ov], [half - ov, w]], out = [];
+    for (let i = 0; i < 2; i++) {
+      const [x0, x1] = spans[i], cv = document.createElement("canvas"); cv.width = x1 - x0; cv.height = hh;
+      cv.getContext("2d").drawImage(bmp, x0, 0, x1 - x0, hh, 0, 0, x1 - x0, hh);
+      const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", 0.92)); if (!blob) return null;
+      out.push(new File([blob], (file.name || "foto").replace(/\.\w+$/, "") + (i ? "_rechts" : "_links") + ".jpg", { type: "image/jpeg" }));
+    }
+    if (bmp.close) bmp.close(); return out;
+  } catch (e) { return null; }
+}
 function scanRows(data) {
   const arr = Array.isArray(data) ? data : (data && Array.isArray(data.vocab) ? data.vocab : []);
   const clean = v => String(v == null ? "" : v).replace(/\s+/g, " ").trim();
@@ -1651,7 +1743,7 @@ function scanRows(data) {
     const toks = toTokens(segs); let u = x.u === true || x.u === "true" || x.u === 1;
     if (toks.length && !toks.some(t => t.b)) { toks.forEach(t => { t.b = true; }); u = true; }   // nichts fett: ganzer Text als Lösung, bitte prüfen
     const dh = splitDH(toks);
-    return { f: clean(x.f).slice(0, 120), toks, d: dh.d.slice(0, 120), h: dh.h.slice(0, 300), u };
+    return { f: clean(stripIPA(x.f)).slice(0, 120), toks, d: dh.d.slice(0, 120), h: dh.h.slice(0, 300), u };
   }).filter(x => x.f && x.toks.length);
 }
 function fileToDataUrl(file, max = 1800) {
@@ -1690,6 +1782,7 @@ async function scanDialog(lang) {
     const status = h("div", { class: "muted", "aria-live": "polite" });
     const filesBox = h("div", { class: "row" }), rowsBox = h("div", { class: "stack" }), shotsBox = h("div", { class: "row" });
     const tc = tagControls(S.lastTag);
+    const splitCb = h("input", { type: "checkbox", checked: true, "aria-label": "Doppelseiten teilen", style: "width:22px;height:22px;min-height:0;flex:none" });
     const goBtn = h("button", { class: "btn", type: "button" }, "Auslesen");
     const stopBtn = h("button", { class: "btn sec hide", type: "button" }, "Stopp");
     const applyBtn = h("button", { class: "btn parent hide", type: "button" }, "Übernehmen");
@@ -1741,15 +1834,22 @@ async function scanDialog(lang) {
       busy = true; ctl = new AbortController(); stopBtn.classList.remove("hide"); renderFiles(); upd();
       const todo = files.slice(); let done = 0, failed = null;
       for (const f of todo) {
-        status.textContent = "Foto " + (done + 1) + " von " + todo.length + " wird gelesen … (das kann bis zu einer Minute dauern)";
+        status.textContent = "Foto " + (done + 1) + " von " + todo.length + " wird vorbereitet …";
         try {
           const urlP = fileToDataUrl(f).catch(() => null);
-          const data = await S.sample.json(scanPrompt(langName), { images: f, signal: ctl.signal });
-          shots.push({ url: await urlP }); const si = shots.length - 1;
-          scanRows(data).forEach(x => {
-            const key = norm(x.f) + "|" + norm(x.d), dup = !!x.d && (have.has(key) || rows.some(r => norm(r.f) + "|" + norm(r.d) === key));
-            rows.push({ ...x, dup, inc: !dup && !!x.d, shot: si });
-          });
+          const parts = splitCb.checked ? await splitSpread(f) : null, list = parts || [f];
+          shots.push({ url: null }); const si = shots.length - 1;
+          for (let pi = 0; pi < list.length; pi++) {
+            status.textContent = "Foto " + (done + 1) + " von " + todo.length + (parts ? (pi ? ", rechte Seite" : ", linke Seite") : "") + " wird gelesen … (das kann bis zu einer Minute dauern)";
+            const data = await S.sample.json(scanPrompt(langName), { images: list[pi], signal: ctl.signal });
+            scanRows(data).forEach(x => {
+              const key = norm(x.f) + "|" + norm(x.d);
+              if (rows.some(r => r.shot === si && norm(r.f) + "|" + norm(r.d) === key)) return;        /* Überlappung in der Mitte: doppelte Zeile weglassen */
+              const dup = !!x.d && (have.has(key) || rows.some(r => norm(r.f) + "|" + norm(r.d) === key));
+              rows.push({ ...x, dup, inc: !dup && !!x.d, shot: si });
+            });
+          }
+          shots[si].url = await urlP;
           files.splice(files.indexOf(f), 1); done++;
         } catch (e) { failed = e; break; }
       }
@@ -1770,10 +1870,10 @@ async function scanDialog(lang) {
       try { await saveWords(lang, arr); shut(true); toast(added + " Vokabeln übernommen."); renderAll(); } catch (e) { toastErr(e); }
     });
     box.append(
-      h("p", { class: "muted", style: "margin:0" }, "Fotografiere eine Vokabelseite oder wähle Fotos aus. Claude schreibt den Text samt Schriftgewicht ab, die App macht daraus Lösung (fett) und Hinweis (normal). Bei der Fremdsprache wird alles außer Kursivem übernommen."),
-      h("p", { class: "muted", style: "margin:0" }, "Tipp: Nur die Vokabelspalten formatfüllend, gerade und bei gutem Licht aufnehmen, am besten Seite für Seite oder Spalte für Spalte. Nur so bleiben fett und normal gut unterscheidbar."),
+      h("p", { class: "muted", style: "margin:0" }, "Fotografiere eine Vokabelseite oder wähle Fotos aus. Claude schreibt den Text samt Schriftgewicht ab, die App macht daraus Lösung (fett) und Hinweis (normal). Bei der Fremdsprache werden Lautschrift und Kursives weggelassen."),
+      h("p", { class: "muted", style: "margin:0" }, "Tipp: Nur die Vokabelspalten formatfüllend, gerade und bei gutem Licht aufnehmen, am besten Seite für Seite. Ein Screenshot einer Doppelseite geht auch: Breite Bilder werden automatisch in linke und rechte Seite geteilt."),
       h("div", { class: "row" }, h("button", { class: "btn sec", type: "button", onclick: () => cam.click() }, "Foto aufnehmen"), h("button", { class: "btn sec", type: "button", onclick: () => pick.click() }, "Foto auswählen"), cam, pick),
-      filesBox, h("div", { class: "row" }, goBtn, stopBtn), status, shotsBox, helpP, rowsBox, tagWrap,
+      filesBox, h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, splitCb, h("span", null, "Doppelseiten (breite Fotos) automatisch in linke und rechte Seite teilen")), h("div", { class: "row" }, goBtn, stopBtn), status, shotsBox, helpP, rowsBox, tagWrap,
       h("div", { class: "row" }, applyBtn, h("button", { class: "btn sec", type: "button", onclick: () => shut(false) }, "Schließen")),
       h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Datenschutz: Die Fotos werden nur zum Auslesen an Claude gesendet und nicht in der App gespeichert. Das Auslesen verbraucht Nutzung deines Claude-Kontos, beim ersten Mal fragt Claude nach Erlaubnis."));
     renderFiles(); upd();
@@ -1886,7 +1986,7 @@ function elternView() {
         S.exams[k.id] ? h("button", { class: "btn sec small", disabled: !S.canWrite, onclick: () => discardExam(k.id) }, "Prüfung verwerfen") : null) : null));
   });
   c.append(h("p", { class: "muted", style: "margin:0" }, "Inaktive Personen erscheinen nicht in der Auswahl. Ihre Aufgabe und Statistik bleiben erhalten."));
-  w.append(c, asgAdminCard(), kidsCard(), langCard());
+  w.append(c, asgAdminCard(), kidsCardX(), langCard());
   w.append(h("div", { class: "card stack" }, h("h2", null, "Statistik"),
     h("p", { class: "muted", style: "margin:0" }, "Setzt die Zähler (abgefragt, richtig, falsch) zurück – für eine Person und eine Sprache oder für alle. Das Protokoll bleibt erhalten. Das Passwort wird dabei immer neu abgefragt."),
     h("button", { class: "btn sec", disabled: !S.canWrite, onclick: resetStatsDialog }, "Statistik zurücksetzen …")));
@@ -1902,8 +2002,24 @@ function elternView() {
     h("button", { class: "btn parent", disabled: !S.canWrite, onclick: importFeedbackDialog }, "Lernstand einlesen …")));
   w.append(h("div", { class: "card stack" }, h("h2", null, "Passwort"),
     h("button", { class: "btn sec", disabled: !S.canWrite, onclick: changePw }, "Passwort ändern")));
+  accordionize(w);
+  w.prepend(h("div", { class: "row", style: "justify-content:flex-end" }, h("button", { class: "btn small sec", onclick: () => { S.admAll = !S.admAll; if (!S.admAll) S.adm = {}; renderAll(); } }, S.admAll ? "Alles einklappen" : "Alles ausklappen")));
   w.append(h("button", { class: "btn parent", onclick: () => { S.parentUntil = 0; renderAll(); } }, "Administrator-Bereich sperren"));
   return w;
+}
+/* Jede Karte im Admin-Bereich wird zum Ausklappen (Zustand bleibt beim Neuaufbau erhalten) */
+function accordionize(w) {
+  S.adm = S.adm || {};
+  [...w.children].forEach(el => {
+    if (!el.classList.contains("card")) return;
+    const hd = el.firstElementChild; if (!hd || hd.tagName !== "H2") return;
+    const key = hd.textContent, body = h("div", { class: "stack", style: "margin-top:12px" });
+    [...el.children].slice(1).forEach(c => body.append(c));
+    const d = h("details", { class: "card acc" }, h("summary", null, key), body);
+    if (S.admAll || S.adm[key]) d.open = true;
+    d.addEventListener("toggle", () => { if (!S.admAll) S.adm[key] = d.open; });
+    el.replaceWith(d);
+  });
 }
 async function setActive(k, on) {
   try {
@@ -1984,6 +2100,7 @@ async function deleteKid(k) {
 function langCard() {
   const c = h("div", { class: "card stack" }, h("h2", null, "Sprachmappen"));
   S.settings.langs.forEach(l => c.append(h("div", { class: "row" }, h("span", { class: "grow" }, h("b", null, l.name), " ", h("span", { class: "muted" }, (S.vocab[l.id] || []).length + " Vokabeln")),
+    ttsSelect(l),
     h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => renameLang(l) }, "Umbenennen"),
     h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => deleteLang(l) }, "Löschen"))));
   const n = h("input", { type: "text", placeholder: "Neue Sprache", "data-key": "nl" });
@@ -2054,7 +2171,7 @@ async function finalizeExam(kid) {
   let pts = 0;
   if (t.passed) celebrate({ kind: "exam", kid, main: t.ok + " von " + t.items.length + " richtig", sub: "Bestehensgrenze " + (t.pass || 100) + " %" });
   { const pct = 100 * t.ok / Math.max(1, t.items.length);
-    if (pct + 1e-9 >= PT.min) { pts = PT.exam; await awardPoints(kid, "e" + t.created, 3, pts, ptLabel(t), taskMeta(t)); }
+    if (pct + 1e-9 >= PT.min) { pts = isHear(t.dir) ? PTH.exam : PT.exam; await awardPoints(kid, "e" + t.created, 3, pts, ptLabel(t), taskMeta(t)); }
     if (t.items.length && t.ok === t.items.length) await awardPoints(kid, "p" + t.created, 4, 0, ptLabel(t), taskMeta(t));
     if (t.chap && t.passed) await recordChapPass(kid, t.chap, t.submitted);
     if (t.asg) await creditAsg(t.asg, "e" + t.created, pct); }
@@ -2134,7 +2251,8 @@ async function startDialog(kid0) {
   await modal("Neue Aufgabe", (box, close) => {
     const ks = h("select", null, kids.map(k => h("option", { value: k.id, selected: k.id === kid0 }, k.name)));
     const sel = h("select", null, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
-    const dir = dirSelect(cfg.dir);
+    const dir = dirSelect(cfg.dir), plays = playsSelect(0), playsBox = h("div", { class: isHear(dir.value) ? "" : "hide" }, h("label", { class: "f" }, "Wiedergaben pro Wort"), plays);
+    dir.addEventListener("change", () => playsBox.classList.toggle("hide", !isHear(dir.value)));
     const from = h("input", { type: "number", min: 1, max: MAXV, value: cfg.from || 1, inputmode: "numeric" });
     const to = h("input", { type: "number", min: 1, max: MAXV, value: cfg.to || 50, inputmode: "numeric" });
     const fs = fltSelects(sel.value, cfg.flt || {});
@@ -2175,10 +2293,10 @@ async function startDialog(kid0) {
       if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Aufgabe verwerfen?", "Die bisherigen Antworten von " + kidName(kid) + " gehen verloren.", "Verwerfen & neu starten", true))) return;
       try {
         await wupdate("app/settings", { cfgs: { [kid]: { lang: sel.value, dir: dir.value, from: fIn, to: tIn, flt, tips: tipsOn, sel: selM } } });
-        if (await createTask(kid, sel.value, dir.value, fIn, tIn, flt, tipsOn, selM, { src: "admin" })) { close(true); toast("Aufgabe für " + kidName(kid) + " gestartet."); if (kid === S.kid) S.tab = "lernen"; renderAll(); }
+        if (await createTask(kid, sel.value, dir.value, fIn, tIn, flt, tipsOn, selM, { src: "admin", plays: +plays.value || 0 })) { close(true); toast("Aufgabe für " + kidName(kid) + " gestartet."); if (kid === S.kid) S.tab = "lernen"; renderAll(); }
       } catch (e) { toastErr(e); }
     };
-    box.append(kids.length > 1 ? h("div", null, h("label", { class: "f" }, "Für"), ks) : null, h("div", null, h("label", { class: "f" }, "Mappe"), sel), h("div", null, h("label", { class: "f" }, "Richtung"), dir),
+    box.append(kids.length > 1 ? h("div", null, h("label", { class: "f" }, "Für"), ks) : null, h("div", null, h("label", { class: "f" }, "Mappe"), sel), h("div", null, h("label", { class: "f" }, "Richtung"), dir), playsBox,
       h("div", null, h("label", { class: "f" }, "Auswahl der Vokabeln nach"), segEl), rangeBox, tagBox, sw, info,
       h("div", { class: "row" }, h("button", { class: "btn parent", onclick: go }, "Auswürfeln & freigeben"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
   });
@@ -2186,7 +2304,7 @@ async function startDialog(kid0) {
 async function resetInput(kid) {
   const t = S.tasks[kid]; if (!t) return;
   if (t.state === "OFFEN" && !(await confirmBox("Eingabe zurücksetzen?", "Die bisherigen Antworten von " + kidName(kid) + " gehen verloren, es werden neue Vokabeln ausgewürfelt.", "Zurücksetzen", true))) return;
-  try { if (t.state === "ABGEGEBEN" && !t.counted) await finalizeCounts(kid); if (await createTask(kid, t.lang, t.dir, t.from, t.to, t.flt, t.tips, selMode(t), { src: t.src, asg: t.asg })) { if (kid === S.kid) S.tab = "lernen"; toast("Neue Vokabeln für " + kidName(kid) + " ausgewürfelt."); renderAll(); } } catch (e) { toastErr(e); }
+  try { if (t.state === "ABGEGEBEN" && !t.counted) await finalizeCounts(kid); if (await createTask(kid, t.lang, t.dir, t.from, t.to, t.flt, t.tips, selMode(t), { src: t.src, asg: t.asg, plays: t.plays })) { if (kid === S.kid) S.tab = "lernen"; toast("Neue Vokabeln für " + kidName(kid) + " ausgewürfelt."); renderAll(); } } catch (e) { toastErr(e); }
 }
 async function changePw() {
   await modal("Passwort ändern", (box, close) => {
@@ -2201,8 +2319,8 @@ async function changePw() {
     box.append(a, b, h("div", { class: "row" }, h("button", { class: "btn parent", onclick: go }, "Speichern"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
   });
 }
-/* ------------------------------------------------------------------ Punkte, Aufträge und Belohnungen */
-/* Punkte ab 90 % richtig: eigene Übung 1, Übung aus Aufgabe/Auftrag vom Administrator 5, Prüfung 15 (Wiederholungen derselben Vokabeln zählen nicht). */
+/* ------------------------------------------------------------------ Punkte, Herausforderungen und Belohnungen */
+/* Punkte ab 90 % richtig: eigene Übung 1, Übung aus Aufgabe/Herausforderung vom Administrator 5, Prüfung 15 (Wiederholungen derselben Vokabeln zählen nicht). */
 const PT = { min: 90, own: 1, asg: 5, exam: 15 }, LEVEL_STEP = 50;
 const LEVEL_NAMES = ["Starter", "Entdecker", "Wortsammler", "Vokabelprofi", "Sprachkünstler", "Meister", "Legende"];
 const PCAT = { 1: "Eigene Übungen", 2: "Aufgaben vom Admin", 3: "Prüfungen" };
@@ -2214,7 +2332,7 @@ const ptsSig = () => Object.values(S.pts).map(p => [p.kid, (p.ev || []).length, 
 
 /* Punktekonto je Person: Liste einzelner Ereignisse [id, Zeit, Kategorie 1-3, Punkte, Text]; old = Summe älterer, zusammengefasster Ereignisse je Kategorie */
 
-/* Aufträge: reqs = Positionen (Übung/Prüfung, Mappe, Tags, Anzahl, Mindest-%), prog = erledigte Läufe je Position (Lauf-IDs, damit Zusammenführen nichts doppelt zählt) */
+/* Herausforderungen: reqs = Positionen (Übung/Prüfung, Mappe, Tags, Anzahl, Mindest-%), prog = erledigte Läufe je Position (Lauf-IDs, damit Zusammenführen nichts doppelt zählt) */
 const asgOf = kid => Object.values(S.asgs).filter(a => a.kid === kid).sort((x, y) => (x.doneAt ? 1 : 0) - (y.doneAt ? 1 : 0) || y.created - x.created);
 const reqDone = (a, r) => Math.min(r.count, ((a.prog && a.prog[r.id]) || []).length);
 const asgComplete = a => a.reqs.length > 0 && a.reqs.every(r => reqDone(a, r) >= r.count);
@@ -2224,10 +2342,10 @@ function cleanAsg(a) {
   const str = (x, n) => String(x == null ? "" : x).slice(0, n), pos = x => (Number.isFinite(+x) && +x > 0) ? Math.round(+x) : null;
   const reqs = (Array.isArray(a.reqs) ? a.reqs : []).slice(0, 12).filter(r => r && typeof r === "object").map(r => ({ id: str(r.id, 20), type: r.type === "pruef" ? "pruef" : "ueb", lang: str(r.lang, 40), langName: str(r.langName, 60),
     dir: cleanDir(r.dir), secs: cleanSecs(r.secs), flt: { s: str(r.flt && r.flt.s, 40), k: str(r.flt && r.flt.k, 40), l: str(r.flt && r.flt.l, 200), b: str(r.flt && r.flt.b, 60) },
-    count: Math.max(1, Math.min(50, Math.round(+r.count || 1))), minPct: Math.max(0, Math.min(100, Math.round(+r.minPct || 0))), tips: !!r.tips })).filter(r => r.id && r.lang);
+    count: Math.max(1, Math.min(50, Math.round(+r.count || 1))), minPct: Math.max(0, Math.min(100, Math.round(+r.minPct || 0))), tips: !!r.tips, plays: Math.max(0, Math.min(9, Math.round(+r.plays) || 0)) })).filter(r => r.id && r.lang);
   const prog = {}; if (a.prog && typeof a.prog === "object") reqs.forEach(r => { const l = a.prog[r.id]; if (Array.isArray(l)) prog[r.id] = [...new Set(l.map(x => str(x, 60)))].slice(-200); });
   const id = str(a.id, 40), kid = str(a.kid, 40); if (!id || !kid || !reqs.length) return null;
-  return { id, kid, kidName: str(a.kidName, 60), title: str(a.title, 80) || "Auftrag", created: pos(a.created) || Date.now(), due: pos(a.due), reward: str(a.reward, 200), reqs, prog, doneAt: pos(a.doneAt), redeemed: pos(a.redeemed) };
+  return { id, kid, kidName: str(a.kidName, 60), title: str(a.title, 80) || "Herausforderung", created: pos(a.created) || Date.now(), due: pos(a.due), reward: str(a.reward, 200), reqs, prog, doneAt: pos(a.doneAt), redeemed: pos(a.redeemed) };
 }
 function mergeAsg(cur, inc) {
   const m = clone(inc), prog = {};
@@ -2264,7 +2382,7 @@ async function startAssigned(aid, rid) {
     if (rq.type === "ueb") {
       const run = S.tasks[kid];
       if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Übung ersetzen?", "Die bisherigen Antworten in der laufenden Übung gehen verloren.", "Neue Übung starten", true))) { S.busy = false; renderAll(); return; }
-      if (await createTask(kid, rq.lang, rq.dir, 1, MAXV, rq.flt, !!rq.tips, "tags", { src: "asg", asg: ref })) { S.mode = "lernen"; S.tab = "lernen"; toast("Los geht’s!"); }
+      if (await createTask(kid, rq.lang, rq.dir, 1, MAXV, rq.flt, !!rq.tips, "tags", { src: "asg", asg: ref, plays: rq.plays })) { S.mode = "lernen"; S.tab = "lernen"; toast("Los geht’s!"); }
     } else {
       const run = S.exams[kid];
       if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung ersetzen?", "Die bisherigen Antworten in der laufenden Prüfung gehen verloren.", "Neue Prüfung starten", true))) { S.busy = false; renderAll(); return; }
@@ -2279,7 +2397,7 @@ async function startAssigned(aid, rid) {
   S.busy = false; renderAll(); window.scrollTo(0, 0);
 }
 
-/* ---- Bereich „Ziele“ (Person): Level, Punkte, Aufträge ---- */
+/* ---- Bereich „Ziele“ (Person): Level, Punkte, Herausforderungen ---- */
 function asgCard(a) {
   const done = !!a.doneAt, late = !done && a.due && Date.now() > a.due;
   const c = h("div", { class: "card stack" }, h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("b", null, a.title),
@@ -2297,15 +2415,15 @@ function asgCard(a) {
   return c;
 }
 
-/* ---- Administrator: Aufträge anlegen, Belohnung als eingelöst markieren ---- */
+/* ---- Administrator: Herausforderungen anlegen, Belohnung als eingelöst markieren ---- */
 async function asgDialog(kid0) {
   const langs = S.settings.langs; if (!langs.length) { toast("Bitte zuerst eine Sprache anlegen."); return; }
   const kids = activeKids(); if (!kids.length) { toast("Keine aktive Person."); return; }
   const first = kid0 || S.kid || kids[0].id;
-  await modal("Neuer Auftrag", (box, close) => {
+  await modal("Neue Herausforderung", (box, close) => {
     const chk = on => h("input", { type: "checkbox", checked: on, style: "width:22px;height:22px;min-height:0;flex:none" });
     const kidRows = kids.map(k => ({ k, cb: chk(k.id === first) }));
-    const title = h("input", { type: "text", placeholder: "Titel, z. B. Wochenauftrag Latein", maxlength: 80, "aria-label": "Titel" });
+    const title = h("input", { type: "text", placeholder: "Titel, z. B. Wochenherausforderung Latein", maxlength: 80, "aria-label": "Titel" });
     const due = h("input", { type: "date", "aria-label": "Fällig bis (optional)" });
     const reward = h("input", { type: "text", placeholder: "Belohnung (optional), z. B. 5-Euro-Gutschein", maxlength: 200, "aria-label": "Belohnung" });
     const tipsCb = chk(false), msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
@@ -2316,18 +2434,20 @@ async function asgDialog(kid0) {
       const sel = h("select", { "aria-label": "Mappe" }, langs.map(l => h("option", { value: l.id, selected: l.id === cfg.lang }, l.name)));
       const dir = dirSelect(cfg.dir, "Richtung");
       const fs = fltSelectsX(sel.value, {});
+      const plays = playsSelect(0), playsBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Wiedergaben pro Wort (Hörverständnis)"), plays), syncPlays = () => playsBox.classList.toggle("hide", !(isHear(dir.value) && type.value === "ueb"));
+      dir.addEventListener("change", syncPlays);
       const secs = secSelect(10), secsBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Zeit pro Vokabel (5 bis 20 Sekunden)"), secs);
       const count = h("input", { type: "number", min: 1, max: 50, value: 1, inputmode: "numeric", "aria-label": "Anzahl" });
       const minPct = h("input", { type: "number", min: 0, max: 100, value: 0, inputmode: "numeric", "aria-label": "Mindestens Prozent richtig" });
       const info = h("div", { class: "muted" });
       const upd = () => { const n = examWords(sel.value, fs.get()).length; info.textContent = type.value === "pruef" ? (fltHas(fs.get()) ? "Prüfung mit " + n + " Vokabeln." + (n > EXAM_MAX ? " Das sind zu viele (max. " + EXAM_MAX + ")." : "") : "Für eine Prüfung bitte mindestens ein Tag wählen.") : n + " passende Vokabeln, je Übung werden " + Math.min(QCOUNT, n) + " abgefragt."; };
-      type.addEventListener("change", () => { minPct.value = type.value === "pruef" ? 80 : 0; secsBox.classList.toggle("hide", type.value !== "pruef"); upd(); });
+      type.addEventListener("change", () => { syncPlays(); minPct.value = type.value === "pruef" ? 80 : 0; secsBox.classList.toggle("hide", type.value !== "pruef"); upd(); });
       sel.addEventListener("change", () => { fs.refill(sel.value); upd(); });
       [dir, ...fs.els].forEach(x => x.addEventListener("input", upd)); upd();
       const wrap = h("div", { class: "stack", style: "padding-top:10px;border-top:1px solid var(--line)" });
-      const row = { type, sel, dir, fs, count, minPct, secs, wrap };
-      const rm = h("button", { class: "btn sec small", type: "button", onclick: () => { if (rows.length < 2) { toast("Ein Auftrag braucht mindestens eine Position."); return; } rows.splice(rows.indexOf(row), 1); wrap.remove(); } }, "Position entfernen");
-      wrap.append(h("b", null, "Position"), h("label", { class: "f" }, "Art der Position: Übung oder Prüfung"), type, sel, dir, h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e))),
+      const row = { type, sel, dir, fs, count, minPct, secs, plays, wrap };
+      const rm = h("button", { class: "btn sec small", type: "button", onclick: () => { if (rows.length < 2) { toast("Eine Herausforderung braucht mindestens eine Position."); return; } rows.splice(rows.indexOf(row), 1); wrap.remove(); } }, "Position entfernen");
+      wrap.append(h("b", null, "Position"), h("label", { class: "f" }, "Art der Position: Übung oder Prüfung"), type, sel, dir, playsBox, h("div", { class: "row" }, fs.els.map(e => h("div", { class: "grow" }, e))),
         h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Anzahl"), count), h("div", { class: "grow" }, h("label", { class: "f" }, "Mindestens % richtig (Prüfung: Bestehensgrenze)"), minPct)), secsBox, info, rm);
       rows.push(row); reqBox.append(wrap);
     };
@@ -2342,33 +2462,33 @@ async function asgDialog(kid0) {
         if (!n) { msg.textContent = nm + "Dazu gibt es keine Vokabeln."; return; }
         if (r.type.value === "pruef" && !fltHas(f)) { msg.textContent = nm + "Für eine Prüfung bitte mindestens ein Tag wählen."; return; }
         if (r.type.value === "pruef" && n > EXAM_MAX) { msg.textContent = nm + "Zu viele Vokabeln für eine Prüfung (max. " + EXAM_MAX + ")."; return; }
-        reqs.push({ id: "r" + (i + 1), type: r.type.value, lang: r.sel.value, langName: (langs.find(l => l.id === r.sel.value) || {}).name || "", dir: r.dir.value, flt: { s: f.s || "", k: f.k || "", l: f.l || "", b: f.b || "" }, count: cnt, minPct: mp, secs: r.type.value === "pruef" ? cleanSecs(r.secs.value) : 0, tips: r.type.value === "ueb" && tipsCb.checked });
+        reqs.push({ id: "r" + (i + 1), type: r.type.value, lang: r.sel.value, langName: (langs.find(l => l.id === r.sel.value) || {}).name || "", dir: r.dir.value, flt: { s: f.s || "", k: f.k || "", l: f.l || "", b: f.b || "" }, count: cnt, minPct: mp, secs: r.type.value === "pruef" ? cleanSecs(r.secs.value) : 0, tips: r.type.value === "ueb" && tipsCb.checked, plays: r.type.value === "ueb" && isHear(r.dir.value) ? (+r.plays.value || 0) : 0 });
       }
       msg.textContent = ""; btn.disabled = true;
       try {
         const base = Date.now();
         for (const [i, r] of sel.entries()) {
           const id = "a" + (base + i).toString(36) + Math.random().toString(36).slice(2, 4);
-          const a = { id, kid: r.k.id, kidName: r.k.name, title: title.value.trim() || "Auftrag", created: base + i, due: due.value ? new Date(due.value + "T23:59:00").getTime() : null, reward: reward.value.trim(), reqs: clone(reqs), prog: {}, doneAt: null, redeemed: null };
+          const a = { id, kid: r.k.id, kidName: r.k.name, title: title.value.trim() || "Herausforderung", created: base + i, due: due.value ? new Date(due.value + "T23:59:00").getTime() : null, reward: reward.value.trim(), reqs: clone(reqs), prog: {}, doneAt: null, redeemed: null };
           await wset("asg/" + id, a); S.asgs[id] = a;
         }
-        close(true); toast(sel.length === 1 ? "Auftrag für " + sel[0].k.name + " erstellt." : "Auftrag für " + sel.length + " Personen erstellt."); renderAll();
+        close(true); toast(sel.length === 1 ? "Herausforderung für " + sel[0].k.name + " erstellt." : "Herausforderung für " + sel.length + " Personen erstellt."); renderAll();
       } catch (e) { btn.disabled = false; toastErr(e); }
     };
-    box.append(h("p", { class: "muted", style: "margin:0" }, "Ein Auftrag besteht aus einer oder mehreren Positionen, z. B. 5 Übungen zu Lektion 11 und 1 Prüfung dazu mit mindestens 80 %. Die Person startet sie selbst im Bereich „Ziele“."),
-      kids.length > 1 ? h("div", { class: "stack" }, h("label", { class: "f" }, "Für wen zählt der Auftrag? (mehrere möglich)"), ...kidRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, r.k.name)))) : null,
+    box.append(h("p", { class: "muted", style: "margin:0" }, "Eine Herausforderung besteht aus einer oder mehreren Positionen, z. B. 5 Übungen zu Lektion 11 und 1 Prüfung dazu mit mindestens 80 %. Die Person startet sie selbst im Bereich „Ziele“."),
+      kids.length > 1 ? h("div", { class: "stack" }, h("label", { class: "f" }, "Für wen zählt die Herausforderung? (mehrere möglich)"), ...kidRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, r.k.name)))) : null,
       title, h("div", null, h("label", { class: "f" }, "Fällig bis (optional)"), due), reqBox,
       h("button", { class: "btn sec", type: "button", onclick: addRow }, "+ Weitere Position"),
       h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, tipsCb, h("span", null, "Tipps bei den Übungen erlauben")),
       h("div", null, h("label", { class: "f" }, "Belohnung (optional)"), reward), msg,
-      h("div", { class: "row" }, h("button", { class: "btn parent", onclick: e => go(e.currentTarget) }, "Auftrag erstellen"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
+      h("div", { class: "row" }, h("button", { class: "btn parent", onclick: e => go(e.currentTarget) }, "Herausforderung erstellen"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
   }, { sticky: true });
 }
 async function redeemAsg(a, on) {
   try { const n = clone(a); n.redeemed = on ? Date.now() : null; await wset("asg/" + a.id, n); S.asgs[a.id] = n; renderAll(); } catch (e) { toastErr(e); }
 }
 async function deleteAsg(a) {
-  if (!(await confirmBox("Auftrag löschen?", "„" + a.title + "“ von " + kidName(a.kid) + " wird gelöscht. Bereits gesammelte Punkte bleiben erhalten.", "Löschen", true))) return;
+  if (!(await confirmBox("Herausforderung löschen?", "„" + a.title + "“ von " + kidName(a.kid) + " wird gelöscht. Bereits gesammelte Punkte bleiben erhalten.", "Löschen", true))) return;
   try { await wdelete("asg/" + a.id); delete S.asgs[a.id]; renderAll(); } catch (e) { toastErr(e); }
 }
 function asgAdminRow(a) {
@@ -2384,24 +2504,24 @@ function asgAdminRow(a) {
       h("button", { class: "btn sec small", disabled: !S.canWrite, onclick: () => deleteAsg(a) }, "Löschen")));
 }
 function asgAdminCard() {
-  const c = h("div", { class: "card stack" }, h("h2", null, "Aufträge, Belohnungen & Punkte"),
-    h("p", { class: "muted", style: "margin:0" }, "Tages- oder Wochenaufträge mit mehreren Lektionen und Prüfungen, je mit Anzahl und optional einer Belohnung. Die Person startet die Übungen selbst im Bereich „Ziele“ und sammelt dort Punkte."),
-    h("button", { class: "btn parent", disabled: !S.canWrite, onclick: () => asgDialog() }, "Neuen Auftrag erstellen …"));
+  const c = h("div", { class: "card stack" }, h("h2", null, "Herausforderungen, Belohnungen & Punkte"),
+    h("p", { class: "muted", style: "margin:0" }, "Tages- oder Wochen-Herausforderungen mit mehreren Lektionen und Prüfungen, je mit Anzahl und optional einer Belohnung. Die Person startet die Übungen selbst im Bereich „Ziele“ und sammelt dort Punkte."),
+    h("button", { class: "btn parent", disabled: !S.canWrite, onclick: () => asgDialog() }, "Neue Herausforderung erstellen …"));
   c.append(chapSettingsRow());
   kidsOf().forEach(k => {
     const list = asgOf(k.id), p = ptsOf(k.id), li = levelInfo(k.id);
     c.append(h("div", { class: "stack", style: "padding-top:12px;border-top:1px solid var(--line)" },
       h("div", null, h("b", null, k.name), h("div", { class: "muted" }, p.total + " Punkte · " + fullTitle(li.lt, li.la) + " (Faktor " + fmtF(li.f) + ") · 100 %-Prüfungen " + p.perf + " · Eigene " + p.by[1] + ", Aufgaben " + p.by[2] + ", Prüfungen " + p.by[3])),
-      ...(list.length ? list.map(asgAdminRow) : [h("div", { class: "muted" }, "Keine Aufträge.")])));
+      ...(list.length ? list.map(asgAdminRow) : [h("div", { class: "muted" }, "Keine Herausforderungen.")])));
   });
   return c;
 }
 
 /* ------------------------------------------------------------------ Richtung „gemischt“, Zeit pro Vokabel, Prüfung Vokabel für Vokabel */
-const cleanDir = d => (d === "d2f" || d === "mix") ? d : "f2d";
+const cleanDir = d => (d === "d2f" || d === "mix" || d === "h2f" || d === "h2d") ? d : "f2d";
 const cleanSecs = x => { x = Math.round(+x || 0); return x >= 5 && x <= 20 ? x : 0; };
-const qa = (w, dir) => { const d = dir === "mix" ? (Math.random() < 0.5 ? "f2d" : "d2f") : dir; return { q: d === "d2f" ? w.d : w.f, s: d === "d2f" ? w.f : w.d }; };
-const dirSelect = (init, label) => { const e = h("select", label ? { "aria-label": label } : null, h("option", { value: "f2d" }, "Fremdsprache → Deutsch"), h("option", { value: "d2f" }, "Deutsch → Fremdsprache"), h("option", { value: "mix" }, "Gemischt (beide Richtungen)")); e.value = cleanDir(init); return e; };
+const qa = (w, dir) => { if (dir === "h2f" || dir === "h2d") return { q: w.f, s: dir === "h2f" ? hearAnswers(w.f) : w.d }; const d = dir === "mix" ? (Math.random() < 0.5 ? "f2d" : "d2f") : dir; return { q: d === "d2f" ? w.d : w.f, s: d === "d2f" ? w.f : w.d }; };
+const dirSelect = (init, label) => { const e = h("select", label ? { "aria-label": label } : null, h("option", { value: "f2d" }, "Fremdsprache → Deutsch"), h("option", { value: "d2f" }, "Deutsch → Fremdsprache"), h("option", { value: "mix" }, "Gemischt (beide Richtungen)"), h("option", { value: "h2d" }, "Hören → übersetzen"), h("option", { value: "h2f" }, "Hören → wiedergeben")); e.value = cleanDir(init); return e; };
 const secSelect = init => { const e = h("select", { "aria-label": "Zeit pro Vokabel" }, h("option", { value: "0" }, "Kein Zeitlimit"), ...Array.from({ length: 16 }, (_, k) => h("option", { value: String(k + 5) }, (k + 5) + " Sekunden"))); e.value = String(cleanSecs(init)); return e; };
 
 let examTimer = null, examBusy = false;
@@ -2423,7 +2543,7 @@ function paintExam(root) {
   const t = S.exams[S.kid]; if (!t || t.state !== "OFFEN") return;
   const n = t.items.length, i = Math.min(Math.max(+t.pos || 0, 0), n - 1), it = t.items[i], last = i === n - 1;
   const $x = id => (root || document).querySelector("#" + id), set = (id, v) => { const e = $x(id); if (e) e.textContent = v; };
-  set("xnr", String(i + 1)); set("xq", it.q); set("xcount", "Vokabel " + (i + 1) + " von " + n); set("xnext", last ? "Prüfung abgeben" : "Weiter");
+  set("xnr", String(i + 1)); { const q = $x("xq"); if (q) { if (isHear(t.dir)) q.replaceChildren(hearBtn(t, i, 2)); else q.textContent = it.q; } } set("xcount", "Vokabel " + (i + 1) + " von " + n); set("xnext", last ? "Prüfung abgeben" : "Weiter");
   const inp = $x("xin");
   if (inp) { inp.value = it.a || ""; inp.disabled = !S.canWrite; inp.dataset.key = "a" + i; inp.setAttribute("enterkeyhint", last ? "done" : "next"); inp.setAttribute("aria-label", "Antwort zu Vokabel " + (i + 1)); }
 }
@@ -2451,14 +2571,14 @@ async function examAdvance(auto) {
   try {
     clearTimeout(ansTimer); ansDirty = false;
     t.pos = i + 1; t.pstart = Date.now();
-    paintExam(); if (inp && document.activeElement !== inp && !auto) inp.focus();
+    paintExam(); if (inp && document.activeElement !== inp && !auto) inp.focus({ preventScroll: true });
     await wupdate("exam/" + kid, { items: t.items, pos: t.pos, pstart: t.pstart });
   } catch (e) { t.pos = was.pos; t.pstart = was.pstart; paintExam(); toastErr(e, "Das Weiterschalten konnte nicht gespeichert werden."); }
   examBusy = false;
-  const nx = document.getElementById("xin"); if (nx && !nx.disabled && !auto) nx.focus();
+  const nx = document.getElementById("xin"); if (nx && !nx.disabled && !auto) { nx.focus({ preventScroll: true }); centerCard(nx); }
 }
 
-/* ------------------------------------------------------------------ Mehrere Lektionen wählen (Prüfungen und Aufträge) */
+/* ------------------------------------------------------------------ Mehrere Lektionen wählen (Prüfungen und Herausforderungen) */
 
 /* ------------------------------------------------------------------ Profil je Person, Level (Titel + Adjektiv), Kapitel-Rating */
 const LVL_P = [0, 50, 150, 250, 350, 500, 650, 800, 950, 1100, 1300, 1500, 1700, 1900, 2100];      /* Titel: Punkte ab Level 1 bis 15 (Referenz: Faktor 1,0) */
@@ -2467,14 +2587,13 @@ const SJ_REF = 16;                                                              
 const TITLES = [["Starter", "m"], ["Entdecker", "m"], ["Wortsammler", "m"], ["Vokabeljäger", "m"], ["Vokabelprofi", "m"], ["Sprachkünstler", "m"], ["Grammatik-Ninja", "m"], ["Wörterbuch auf Beinen", "n"],
   ["Meister", "m"], ["Sprachgenie", "n"], ["Vokabel-Zauberer", "m"], ["Lexikon-Flüsterer", "m"], ["Cicero 2.0", "m"], ["Legende", "f"], ["Babel-Bezwinger", "m"]];
 const ADJ = ["harmlos", "ordentlich", "pingelig", "makellos", "streberhaft", "fehlerallergisch", "unbestechlich", "überqualifiziert", "verdächtig", "unausstehlich", "unverschämt", "größenwahnsinnig", "unfehlbar", "übermenschlich", "allmächtig"];
-const SA_LABEL = { Haupt: "Hauptschule", Real: "Realschule", Gym: "Gymnasium" }, SA_MAXK = { Haupt: 9, Real: 10, Gym: 13 };
+const SA_LABEL = { Haupt: "Hauptschule", Real: "Realschule", Gym: "Gymnasium", Frei: "Eigenes Wörterbuch" }, SA_MAXK = { Haupt: 9, Real: 10, Gym: 13 };
 const kidObj = kid => kidsOf().find(k => k.id === kid);
 const langName = id => ((S.settings.langs || []).find(l => l.id === id) || {}).name || "";
-const profOn = k => !!(k && k.prof && k.prof.sa && Array.isArray(k.prof.langs) && k.prof.langs.some(l => ((S.settings && S.settings.langs) || []).some(x => x.id === l.id)));
+const profOn = k => !!(k && k.prof && (k.prof.sa || k.prof.mode === "frei") && Array.isArray(k.prof.langs) && k.prof.langs.some(l => ((S.settings && S.settings.langs) || []).some(x => x.id === l.id)));
 function allowedLangs(kid) { const k = kidObj(kid), all = S.settings.langs || []; if (!profOn(k)) return all; const ids = new Set(k.prof.langs.map(x => x.id)); return all.filter(l => ids.has(l.id)); }
-function saOk(kid, sa) { const k = kidObj(kid); if (!profOn(k) || !sa) return true; return sa === k.prof.sa || (k.prof.extra || []).includes(sa); }
+function saOk(kid, sa) { const k = kidObj(kid); if (!profOn(k) || !sa || !k.prof.sa) return true; return sa === k.prof.sa || (k.prof.extra || []).includes(sa); }
 const visWords = (lang, kid) => (S.vocab[lang] || []).filter(w => wordOk(kid, lang, w));
-const sjOf = prof => prof.langs.reduce((n, l) => n + Math.max(1, prof.maxK - l.from + 1), 0);
 const factorOf = prof => Math.max(0.2, sjOf(prof) / SJ_REF);
 const profFactor = kid => { const k = kidObj(kid); return profOn(k) ? factorOf(k.prof) : 1; };
 function thresholds(base, f, step) { const out = [0]; for (let i = 1; i < base.length; i++) { let v = Math.max(step, Math.round(base[i] * f / step) * step); if (v <= out[i - 1]) v = out[i - 1] + step; out.push(v); } return out; }
@@ -2506,7 +2625,7 @@ function ptsOf(kid) {
 function fullTitle(lt, la) { const [t, g] = TITLES[lt - 1], a = ADJ[la - 1]; return a.charAt(0).toUpperCase() + a.slice(1) + (g === "f" ? "e" : g === "n" ? "es" : "er") + " " + t; }
 const rankOf = kid => { const i = levelInfo(kid); return fullTitle(i.lt, i.la); };
 function levelInfo(kid) {
-  const f = profFactor(kid), tp = thresholds(LVL_P, f, 5), te = thresholds(LVL_E, f, 1), p = ptsOf(kid);
+  const f = profFactor(kid), tp = thresholds(LVL_P, f * POINT_SCALE, 5), te = thresholds(LVL_E, f, 1), p = ptsOf(kid);
   const calc = (thr, v) => { let l = 1; for (let i = 1; i < thr.length; i++) if (v >= thr[i]) l = i + 1; return l; };
   const lt = Math.max(calc(tp, p.total), p.lv[0]), la = Math.max(calc(te, p.perf), p.lv[1]);
   const prog = (thr, lv, v) => lv >= thr.length ? null : { left: Math.max(0, thr[lv] - v), pct: Math.max(0, Math.min(100, Math.round(100 * (v - thr[lv - 1]) / (thr[lv] - thr[lv - 1])))) };
@@ -2561,6 +2680,7 @@ function chapState(kid, key) {
   return { stars: Math.min(6, n), ready: n >= 6, master: !!e.p };
 }
 async function recordChapRun(kid, t, pct) {
+  if (isHear(t.dir)) return;                                           /* Hörverständnis zählt nicht fürs Kapitel-Rating */
   const ws = S.vocab[t.lang] || []; let key = null;
   for (const it of t.items) {                                           /* nur Übungen, deren Vokabeln alle aus demselben Kapitel stammen */
     const ix = wordIdx(t.lang, it); if (ix < 0) return;
@@ -2601,14 +2721,14 @@ function zieleOwn() {
     h("div", { class: "muted" }, li.aProg ? "Noch " + li.aProg.left + (li.aProg.left === 1 ? " perfekte Prüfung" : " perfekte Prüfungen") + " bis zum Adjektiv „" + ADJ[li.la] + "“." : "Höchstes Adjektiv erreicht."),
     h("div", { class: "row" }, [1, 2, 3].map(c => h("span", { class: "pill n" }, PCAT[c] + ": " + p.by[c]))),
     animSwitch(kid),
-    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es ab " + PT.min + " % richtig: " + PT.own + " Punkt für eine eigene Übung, " + PT.asg + " Punkte für eine Übung aus einer Aufgabe oder einem Auftrag vom Administrator, " + PT.exam + " Punkte für eine Prüfung. Dieselben Vokabeln noch einmal zu wiederholen bringt keine Punkte."
+    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es ab " + PT.min + " % richtig: " + PT.own + " Punkt für eine eigene Übung, " + PT.asg + " Punkte für eine Übung aus einer Aufgabe oder einer Herausforderung vom Administrator, " + PT.exam + " Punkte für eine Prüfung. Im Hörverständnis gibt es mehr: " + PTH.own + ", " + PTH.asg + " und " + PTH.exam + " Punkte. Dieselben Vokabeln noch einmal zu wiederholen bringt keine Punkte."
       + (profOn(k) ? " Dein Maßstab für die Level: Faktor " + fmtF(li.f) + " (" + profLabel(k) + "). Änderungen am Profil macht nur der Administrator." : ""))));
   w.append(legendCard(kid, li));
   const rc = readyChapters(kid);
   if (rc.length) { w.append(h("h3", null, "Kapitelprüfungen")); rc.forEach(r => w.append(readyCard(r, kid))); }
-  w.append(h("h3", null, "Aufträge"));
+  w.append(h("h3", null, "Herausforderungen"));
   const list = asgOf(kid);
-  if (!list.length) w.append(h("div", { class: "empty" }, "Noch keine Aufträge. Der Administrator kann dir Tages- oder Wochenaufträge geben."));
+  if (!list.length) w.append(h("div", { class: "empty" }, "Noch keine Herausforderungen. Der Administrator kann dir Tages- oder Wochen-Herausforderungen geben."));
   list.forEach(a => w.append(asgCard(a)));
   if (p.ev.length) w.append(h("details", { class: "card" }, h("summary", { style: "cursor:pointer;font-weight:600" }, "Letzte Punkte"),
     h("div", { class: "stack", style: "margin-top:10px" }, p.ev.slice(0, 20).map(e => h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap;border-top:1px solid var(--line);padding-top:8px" },
@@ -2630,7 +2750,7 @@ function chapSettingsRow() {
 }
 
 /* ------------------------------------------------------------------ Profil als Pflicht (von der Person selbst auszufüllen), Legende */
-const needProfile = kid => { const k = kidObj(kid); return !!(k && k.active !== false && !profOn(k) && !parentOn()); };
+const needProfile = kid => { const k = kidObj(kid); return !!(k && k.active !== false && (!profOn(k) || !k.prof.mode) && !parentOn()); };
 /* Pflichtabfrage: erscheint, solange die Person kein Profil hat (auch bei bisherigen Nutzern beim nächsten Start) */
 
 /* ---- Legende (ausklappbar) unter „Ziele“ ---- */
@@ -2644,7 +2764,7 @@ function legendCard(kid, li) {
       h("p", { class: "muted", style: "margin:0" }, "Dein Name besteht aus einem Adjektiv und einem Titel, z. B. „Pingeliger Grammatik-Ninja“. Der Titel hängt an deinen Punkten, das Adjektiv an der Zahl deiner Prüfungen mit 100 %. Das Adjektiv wird passend gebeugt. Die Zahlen sind für dich berechnet" + (profOn(k) ? " (Faktor " + fmtF(li.f) + ", aus deinem Profil)" : "") + ". Erreichte Level gehen nie verloren. Dein aktueller Stand ist farbig markiert."),
       h("b", null, "Titel nach Punkten"), tbl(["Level", "Titel", "Punkte ab"], tRows),
       h("b", null, "Adjektive nach Prüfungen mit 100 %"), tbl(["Level", "Adjektiv", "Prüfungen ab"], aRows),
-      h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte (ab " + PT.min + " % richtig): " + PT.own + " für eine eigene Übung, " + PT.asg + " für eine Übung aus Aufgabe oder Auftrag, " + PT.exam + " für eine Prüfung. Kapitel-Sterne: 6 Übungen in Folge mit 100 % im selben Kapitel schalten die Kapitelprüfung frei (bestanden ab " + chapPass() + " %).")));
+      h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte (ab " + PT.min + " % richtig): " + PT.own + " für eine eigene Übung, " + PT.asg + " für eine Übung aus Aufgabe oder Herausforderung, " + PT.exam + " für eine Prüfung (Hörverständnis: " + PTH.own + ", " + PTH.asg + " und " + PTH.exam + "). Kapitel-Sterne: 6 Übungen in Folge mit 100 % im selben Kapitel schalten die Kapitelprüfung frei (bestanden ab " + chapPass() + " %).")));
 }
 
 /* ------------------------------------------------------------------ Feier-Animationen (je Person an- und ausschaltbar) */
@@ -2659,7 +2779,7 @@ const CELEB_JOKES = {
   level: ["Die Vokabeln zittern bereits.", "Das Wörterbuch ist beeindruckt.", "Nicht schlecht für einen Menschen."],
   chap: ["Dieses Kapitel hat nichts mehr zu melden.", "Der Lektionstext kapituliert.", "Fehlerfrei und ein bisschen unheimlich."],
   exam: ["Der Rotstift bleibt im Etui.", "Geprüft und für gut befunden.", "Das war fast schon unverschämt gut."],
-  asg: ["Auftrag erledigt, Chef.", "Die Belohnung wartet schon.", "Pflichtbewusstsein auf Höchstniveau."]
+  asg: ["Herausforderung gemeistert, Chef.", "Die Belohnung wartet schon.", "Pflichtbewusstsein auf Höchstniveau."]
 };
 let celebQueue = [], celebRun = false, celebTimer = null;
 function celebrate(c) {
@@ -2674,7 +2794,7 @@ function celebNext() {
   if (!c) { celebRun = false; return; }
   celebRun = true;
   const pool = CELEB_JOKES[c.kind] || [], joke = pool.length ? pool[Math.floor(Math.random() * pool.length)] : "";
-  const head = { level: "Level-Up!", chap: "Kapitel gemeistert!", exam: "Bestanden!", asg: "Auftrag geschafft!" }[c.kind] || "Geschafft!";
+  const head = { level: "Level-Up!", chap: "Kapitel gemeistert!", exam: "Bestanden!", asg: "Herausforderung geschafft!" }[c.kind] || "Geschafft!";
   const cols = ["#ffd84d", "#2447b2", "#14804f", "#bf3329", "#7a3cc4", "#e8793a"], ov = h("div", { class: "celeb", role: "status", "aria-live": "polite" });
   for (let i = 0; i < 40; i++) {
     const p = h("i", { "aria-hidden": "true" });
@@ -2696,7 +2816,7 @@ function animSwitch(kid) {
   const cb = h("input", { type: "checkbox", checked: on, disabled: rm, style: "width:22px;height:22px;min-height:0;flex:none" });
   cb.addEventListener("change", () => { setAnim(kid, cb.checked); renderAll(); });
   return h("div", { class: "stack", style: "gap:8px" },
-    h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, cb, h("span", null, "Animationen bei Erfolgen (Level-Up, Kapitel, Prüfung, Auftrag)")),
+    h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, cb, h("span", null, "Animationen bei Erfolgen (Level-Up, Kapitel, Prüfung, Herausforderung)")),
     rm ? h("div", { class: "muted", style: "font-size:13px" }, "Dein Gerät hat „Bewegung reduzieren“ eingestellt, deshalb gibt es keine Animationen.") : null,
     on ? h("button", { class: "btn sec small", type: "button", onclick: () => celebrate({ kind: "level", kid, main: fullTitle(levelInfo(kid).lt, levelInfo(kid).la), sub: "So sieht eine Feier aus" }) }, "Animation ansehen") : null);
 }
@@ -2800,7 +2920,7 @@ function taskMeta(t) {
   for (const it of t.items) { const ix = wordIdx(t.lang, it); if (ix < 0) { kl = ""; break; } const c = tg(ws[ix])[1] || ""; if (kl === null) kl = c; else if (kl !== c) { kl = ""; break; } }
   return { lang: t.lang, kl: kl || "" };
 }
-/* Verdichteter Stand einer Person: Zellen je Sprache und Klasse = [Punkte eigene Übungen, Punkte Aufgaben/Aufträge, Punkte Prüfungen, Prüfungen mit 100 %, geschaffte Aufträge] */
+/* Verdichteter Stand einer Person: Zellen je Sprache und Klasse = [Punkte eigene Übungen, Punkte Aufgaben/Herausforderungen, Punkte Prüfungen, Prüfungen mit 100 %, geschaffte Herausforderungen] */
 function boardStats(kid) {
   const p = normPts(S.pts[kid], kid), c = {}, cell = (l, k) => c[l + "|" + k] || (c[l + "|" + k] = [0, 0, 0, 0, 0]);
   p.ev.forEach(e => { const x = cell(e[5] || "", e[6] || ""); if (e[2] === 4) x[3]++; else x[e[2] - 1] += e[3]; });
@@ -2834,8 +2954,8 @@ function boardRows() {
 function boardScore(st, kind, lang, kl) {
   const s = [0, 0, 0, 0, 0];
   Object.keys(st.c || {}).forEach(k => { const [l, c] = k.split("|"); if ((lang && l !== lang) || (kl && c !== kl)) return; st.c[k].forEach((v, i) => { s[i] += v; }); });
-  if (kind === "asg") return { v: (!lang && !kl) ? (st.ta || 0) : s[4], sub: "", unit: "Aufträge" };
-  if (kind === "ueb") return { v: s[0] + s[1], sub: "Eigene " + s[0] + " · Aufgaben und Aufträge " + s[1], unit: "Punkte" };
+  if (kind === "asg") return { v: (!lang && !kl) ? (st.ta || 0) : s[4], sub: "", unit: "Herausforderungen" };
+  if (kind === "ueb") return { v: s[0] + s[1], sub: "Eigene " + s[0] + " · Aufgaben und Herausforderungen " + s[1], unit: "Punkte" };
   if (kind === "pruef") return { v: s[2], sub: "Prüfungen mit 100 %: " + s[3], unit: "Punkte" };
   return { v: s[0] + s[1] + s[2], sub: "Übungen " + (s[0] + s[1]) + " · Prüfungen " + s[2], unit: "Punkte" };
 }
@@ -2844,9 +2964,9 @@ function rangView() {
   const rows = boardRows();
   const kls = [...new Set(rows.flatMap(r => Object.keys(r.st.c || {}).map(k => k.split("|")[1]).filter(Boolean)))].sort(natCmp);
   const langs = parentOn() ? S.settings.langs : allowedLangs(S.kid);
-  const kinds = [["gesamt", "Gesamt"], ["ueb", "Übungen"], ["pruef", "Prüfungen"], ["asg", "Aufträge"]];
+  const kinds = [["gesamt", "Gesamt"], ["ueb", "Übungen"], ["pruef", "Prüfungen"], ["asg", "Herausforderungen"]];
   const w = h("div", { class: "stack" });
-  w.append(h("div", { class: "seg", role: "group", "aria-label": "Wertung", style: "margin:0" }, kinds.map(([k, l]) => h("button", { type: "button", "aria-pressed": kind === k ? "true" : "false", onclick: () => { S.rkind = k; renderAll(); } }, l))));
+  w.append(h("div", { class: "seg wrap", role: "group", "aria-label": "Wertung", style: "margin:0" }, kinds.map(([k, l]) => h("button", { type: "button", "aria-pressed": kind === k ? "true" : "false", onclick: () => { S.rkind = k; renderAll(); } }, l))));
   const selL = h("select", { "aria-label": "Sprache" }, h("option", { value: "" }, "Alle Sprachen"), ...langs.map(l => h("option", { value: l.id }, l.name)));
   const selK = h("select", { "aria-label": "Klasse" }, h("option", { value: "" }, "Alle Klassen"), ...kls.map(k => h("option", { value: k }, "Klasse " + k)));
   selL.value = lang; selK.value = kl;
@@ -2869,14 +2989,14 @@ function rangView() {
   if (!sc.length) card.append(h("div", { class: "empty" }, "Noch keine Personen."));
   w.append(card);
   const snaps = rows.filter(r => r.snap), newest = snaps.length ? Math.max(...snaps.map(r => r.st.at || 0)) : 0;
-  w.append(h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es für Übungen, Aufgaben, Aufträge und Prüfungen ab " + PT.min + " % richtig. Ältere Punkte ohne Angabe von Sprache und Klasse zählen nur bei „Alle Sprachen“ und „Alle Klassen“." + (newest ? " Der Stand der anderen Personen stammt vom Lern-Paket vom " + new Date(newest).toLocaleDateString("de-DE") + "." : "")));
+  w.append(h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Punkte gibt es für Übungen, Aufgaben, Herausforderungen und Prüfungen ab " + PT.min + " % richtig. Ältere Punkte ohne Angabe von Sprache und Klasse zählen nur bei „Alle Sprachen“ und „Alle Klassen“." + (newest ? " Der Stand der anderen Personen stammt vom Lern-Paket vom " + new Date(newest).toLocaleDateString("de-DE") + "." : "")));
   return w;
 }
 function zieleView() {
-  const sub = S.zsub === "rang" ? "rang" : "ziele";
+  const sub = S.zsub === "rang" || S.zsub === "ody" ? S.zsub : "ziele";
   const w = h("div", { class: "stack" });
-  if (S.kid) w.append(h("div", { class: "seg", role: "group", "aria-label": "Ansicht", style: "margin:0" }, [["ziele", "Meine Ziele"], ["rang", "Rangliste"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": sub === k ? "true" : "false", onclick: () => { S.zsub = k; renderAll(); window.scrollTo(0, 0); } }, l))));
-  w.append(sub === "rang" && S.kid ? rangView() : zieleOwn());
+  if (S.kid) w.append(h("div", { class: "seg", role: "group", "aria-label": "Ansicht", style: "margin:0" }, [["ziele", "Meine Ziele"], ["rang", "Rangliste"], ["ody", "Wort-Odyssee"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": sub === k ? "true" : "false", onclick: () => { S.zsub = k; renderAll(); window.scrollTo(0, 0); } }, l))));
+  w.append(sub === "ody" && S.kid ? odysseeView() : sub === "rang" && S.kid ? rangView() : zieleOwn());
   return w;
 }
 
@@ -2884,22 +3004,9 @@ function zieleView() {
 const WEEK = 7 * 24 * 3600 * 1000;
 const allBooks = () => { const s = new Set(); Object.values(S.vocab).forEach(ws => ws.forEach(w => { const b = tg(w)[3]; if (b) s.add(b); })); return [...s].sort(natCmp); };
 function booksFor(lang, sa) { const s = new Set(); (S.vocab[lang] || []).forEach(w => { const t = tg(w); if (t[3] && (!sa || !t[0] || t[0] === sa)) s.add(t[3]); }); return [...s].sort(natCmp); }
-function lessonsFor(lang, sa, book) {
-  const s = new Set();
-  (S.vocab[lang] || []).forEach(w => { const t = tg(w); if (!t[2] || t[2].includes("|")) return; if (sa && t[0] && t[0] !== sa) return; if (book && t[3] && t[3] !== book) return; s.add(t[2]); });
-  return [...s].sort(natCmp);
-}
 function lektOk(limit, lesson) { if (!limit || !lesson) return true; const a = parseFloat(lesson), b = parseFloat(limit); return (Number.isFinite(a) && Number.isFinite(b)) ? a <= b : true; }
 const bookOk = (k, pl, b) => !b || !pl || !pl.book || b === pl.book || (k.prof.extraBooks || []).includes(b);
 /* Sichtbarkeit für Personen: Schulart, Lehrbuch (Vokabeln ohne Lehrbuch bleiben sichtbar) und Lektionsstand des eigenen Lehrbuchs */
-function wordOk(kid, lang, w) {
-  const k = kidObj(kid); if (!profOn(k)) return true;
-  const t = tg(w), pl = k.prof.langs.find(x => x.id === lang);
-  if (!saOk(kid, t[0])) return false;
-  if (pl && !bookOk(k, pl, t[3])) return false;
-  if (pl && pl.lekt && (!t[3] || t[3] === pl.book) && !lektOk(pl.lekt, t[2])) return false;
-  return true;
-}
 const groupOk = (kid, lang, t) => wordOk(kid, lang, { t });
 /* Für das Lern-Paket: wie oben, aber ohne Lektionsgrenze, damit die Person später weitere Lektionen freischalten kann */
 function wordOkPkg(kid, lang, w) {
@@ -2911,7 +3018,7 @@ function wordOkPkg(kid, lang, w) {
 function tagValues(lang, kid) {
   const o = [new Set(), new Set(), new Set(), new Set()];
   (S.vocab[lang] || []).forEach(w => { if (kid && !wordOk(kid, lang, w)) return; tg(w).forEach((v, i) => { if (v) o[i].add(v); }); });
-  return o.map((x, i) => [...x].sort(i === 0 ? ((a, b) => (SCHULARTEN.indexOf(a) + 1 || 99) - (SCHULARTEN.indexOf(b) + 1 || 99) || natCmp(a, b)) : natCmp));
+  return o.map((x, i) => [...x].sort(i === 0 ? ((a, b) => (TAGSA.indexOf(a) + 1 || 99) - (TAGSA.indexOf(b) + 1 || 99) || natCmp(a, b)) : natCmp));
 }
 function tagGroups(words) {
   const m = new Map();
@@ -2920,25 +3027,15 @@ function tagGroups(words) {
     if (!g) { g = { t, n: 0, a: 0, r: 0 }; m.set(key, g); }
     const cc = ctr(w, S.kid); g.n++; g.a += cc[0]; g.r += cc[1];
   });
-  const so = a => SCHULARTEN.indexOf(a) + 1 || 99;
+  const so = a => TAGSA.indexOf(a) + 1 || 99;
   return [...m.values()].sort((x, y) => (x.t[0] ? so(x.t[0]) : 100) - (y.t[0] ? so(y.t[0]) : 100) || natCmp(x.t[1], y.t[1]) || natCmp(x.t[3], y.t[3]) || natCmp(x.t[2], y.t[2]));
-}
-function tagControls(init, bulk) {
-  const t = init || ["", "", "", ""], lid = "bl" + Math.random().toString(36).slice(2, 7);
-  const sel = h("select", { "aria-label": "Schulart" }, h("option", { value: "" }, bulk ? "Schulart: unverändert" : "Schulart: –"), bulk ? h("option", { value: "-" }, "Schulart leeren") : null,
-    SCHULARTEN.map(x => h("option", { value: x, selected: t[0] === x }, x)));
-  const k = h("input", { type: "text", inputmode: "numeric", maxlength: 3, placeholder: bulk ? "Klasse: unverändert (- leert)" : "Klasse (z. B. 5)", value: t[1] || "", "aria-label": "Klasse" });
-  const l = h("input", { type: "text", maxlength: 12, placeholder: bulk ? "Lektion: unverändert (- leert)" : "Lektion (z. B. 3)", value: t[2] || "", "aria-label": "Lektion" });
-  const bk = h("input", { type: "text", maxlength: 60, list: lid, placeholder: bulk ? "Lehrbuch: unverändert (- leert)" : "Lehrbuch (z. B. Prima A, Band 2)", value: t[3] || "", "aria-label": "Lehrbuch" });
-  const dl = h("datalist", { id: lid }, allBooks().map(b => h("option", { value: b })));
-  return { el: h("div", { class: "row" }, h("div", { class: "grow" }, sel), h("div", { class: "grow" }, k), h("div", { class: "grow" }, l), h("div", { style: "flex-basis:100%" }, bk, dl)), get: () => [sel.value, k.value.trim(), l.value.trim(), bk.value.trim()] };
 }
 function fltSelects(lang, init) {
   const names = ["Schulart", "Klasse", "Lektion", "Lehrbuch"], cur = [init.s || "", init.k || "", init.l || "", init.b || ""];
   const els = names.map(n => h("select", { "aria-label": n }));
   let lg = lang;
   const refill = () => { const tv = tagValues(lg); els.forEach((e, i) => { const keep = e.value || cur[i];
-    e.replaceChildren(h("option", { value: "" }, names[i] + ": alle"), ...tv[i].map(v => h("option", { value: v }, i === 1 ? "Klasse " + v : i === 2 ? "Lektion " + v : v)));
+    e.replaceChildren(h("option", { value: "" }, names[i] + ": alle"), ...tv[i].map(v => h("option", { value: v }, i === 0 ? saText(v) : i === 1 ? "Klasse " + v : i === 2 ? lessonText(v) : v)));
     e.value = tv[i].includes(keep) ? keep : ""; });
     els[3].style.display = tv[3].length ? "" : "none"; };
   refill();
@@ -2952,12 +3049,12 @@ function fltSelectsX(lang, init) {
   const sum = h("summary", { style: "cursor:pointer" }), list = h("div", { class: "stack", style: "gap:8px;margin-top:10px;max-height:240px;overflow:auto" });
   const box = h("details", { class: "lessonpick", style: "border:1px solid var(--line);border-radius:12px;padding:10px 12px" }, sum, list);
   const fire = () => box.dispatchEvent(new Event("input", { bubbles: true }));
-  const label = () => { const a = [...chosen].sort(natCmp); sum.textContent = a.length ? (a.length === 1 ? "Lektion " : "Lektionen ") + a.join(", ") : "Lektion: alle"; };
+  const label = () => { const a = [...chosen].sort(natCmp); sum.textContent = a.length ? (a.every(x => NUMLIKE.test(x)) ? (a.length === 1 ? "Lektion " : "Lektionen ") : "Themen: ") + a.join(", ") : "Lektion oder Thema: alle"; };
   const fill = () => {
-    const vals = lessonsFor(lg, sSel.value, bSel.value); chosen = new Set([...chosen].filter(v => vals.includes(v)));
+    const vals = (sSel.value === SA_FREI || isDictBook(lg, bSel.value)) ? topicsFor(lg, bSel.value) : lessonsFor(lg, sSel.value, bSel.value); chosen = new Set([...chosen].filter(v => vals.includes(v)));
     list.replaceChildren(h("div", { class: "row" }, h("button", { type: "button", class: "btn sec small", onclick: () => { chosen.clear(); fill(); fire(); } }, "Auswahl aufheben (= alle)")),
       ...vals.map(v => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" },
-        h("input", { type: "checkbox", checked: chosen.has(v), style: "width:22px;height:22px;min-height:0;flex:none", onchange: e => { if (e.target.checked) chosen.add(v); else chosen.delete(v); label(); fire(); } }), h("span", null, "Lektion " + v))));
+        h("input", { type: "checkbox", checked: chosen.has(v), style: "width:22px;height:22px;min-height:0;flex:none", onchange: e => { if (e.target.checked) chosen.add(v); else chosen.delete(v); label(); fire(); } }), h("span", null, lessonText(v)))));
     label();
   };
   [sSel, bSel].forEach(e => e.addEventListener("change", fill));
@@ -2968,153 +3065,10 @@ function fltSelectsX(lang, init) {
 }
 
 /* ---- Profil mit Lehrbuch und Lektionsstand ---- */
-function cleanProf(p) {
-  if (!p || typeof p !== "object") return null;
-  const sa = SCHULARTEN.includes(p.sa) ? p.sa : "";
-  const langs = (Array.isArray(p.langs) ? p.langs : []).slice(0, 20).map(l => {
-    const o = { id: String((l && l.id) || "").slice(0, 40), from: Math.max(1, Math.min(13, Math.round(+(l && l.from)) || 5)) };
-    if (l && l.book) o.book = String(l.book).slice(0, 60);
-    if (l && l.lekt) o.lekt = String(l.lekt).slice(0, 12);
-    return o;
-  }).filter(l => l.id);
-  if (!sa || !langs.length) return null;
-  const eb = (Array.isArray(p.extraBooks) ? p.extraBooks : []).map(x => String(x).slice(0, 60)).filter(Boolean).slice(0, 30);
-  const ts = Number.isFinite(+p.ts) && +p.ts > 0 ? +p.ts : 0, chk = Number.isFinite(+p.chk) && +p.chk > 0 ? +p.chk : 0;
-  return { sa, maxK: Math.max(5, Math.min(13, Math.round(+p.maxK) || SA_MAXK[sa])), langs, extra: (Array.isArray(p.extra) ? p.extra : []).filter(x => SCHULARTEN.includes(x) && x !== sa),
-    ...(eb.length ? { extraBooks: eb } : {}), ...(ts ? { ts } : {}), ...(chk ? { chk } : {}) };
-}
-function profLabel(k) {
-  const p = k.prof; if (!profOn(k)) return "";
-  return (SA_LABEL[p.sa] || p.sa) + " bis Klasse " + p.maxK + " · " + p.langs.map(l => langName(l.id) + " ab " + l.from + (l.book ? " · " + l.book : "") + (l.lekt ? " · bis Lektion " + l.lekt : "")).join(", ")
-    + (p.extra.length ? " · zusätzlich " + p.extra.map(x => SA_LABEL[x] || x).join(", ") : "") + ((p.extraBooks || []).length ? " · Zusatzbücher: " + p.extraBooks.join(", ") : "");
-}
 /* Neuere Inhalte der Person (Lehrbuch, Lektion, letzte Abfrage) gewinnen, alles andere bleibt beim Basisprofil */
-function mergeProfContent(a, b) {
-  if (!a) return b; if (!b || (b.ts || 0) <= (a.ts || 0)) return a;
-  return { ...a, langs: a.langs.map(l => { const x = b.langs.find(y => y.id === l.id); if (!x) return l; const o = { ...l }; if (x.book) o.book = x.book; else delete o.book; if (x.lekt) o.lekt = x.lekt; else delete o.lekt; return o; }), ts: b.ts, ...(b.chk || a.chk ? { chk: Math.max(a.chk || 0, b.chk || 0) } : {}) };
-}
-function contentRow(l, init, required, getSa, getActive) {
-  const book = h("select", { "aria-label": "Lehrbuch " + l.name }), lekt = h("select", { "aria-label": "Lektionsstand " + l.name }), st = { book: init.book || "", lekt: init.lekt || "" };
-  const bookBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Lehrbuch (" + l.name + ")"), book);
-  const lektBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Lektionsstand (" + l.name + "): bis zu welcher Lektion seid ihr in der Schule?"), lekt);
-  let books = [], lessons = [];
-  const refresh = () => {
-    const sa = getSa(); books = booksFor(l.id, sa);
-    if (required && !st.book && books.length === 1) st.book = books[0];
-    if (st.book && !books.includes(st.book)) st.book = "";
-    book.replaceChildren(h("option", { value: "" }, required ? "Lehrbuch wählen …" : "Alle Bücher"), ...books.map(b => h("option", { value: b }, b))); book.value = st.book;
-    lessons = lessonsFor(l.id, sa, st.book);
-    if (st.lekt && !lessons.includes(st.lekt)) st.lekt = "";
-    lekt.replaceChildren(h("option", { value: "" }, required ? "Lektionsstand wählen …" : "Alle Lektionen"), ...lessons.map(v => h("option", { value: v }, "Lektion " + v))); lekt.value = st.lekt;
-    const act = getActive(); bookBox.classList.toggle("hide", !(act && books.length)); lektBox.classList.toggle("hide", !(act && lessons.length));
-  };
-  book.addEventListener("change", () => { st.book = book.value; st.lekt = ""; refresh(); });
-  lekt.addEventListener("change", () => { st.lekt = lekt.value; });
-  refresh();
-  return { el: h("div", { class: "stack", style: "gap:8px" }, bookBox, lektBox), refresh, read: () => ({ book: st.book, lekt: st.lekt }), need: () => ({ book: books.length > 0, lekt: lessons.length > 0 }), has: () => books.length > 0 || lessons.length > 0 };
-}
-function buildProfileForm(cur, o) {
-  const langs = S.settings.langs;
-  const chk = on => h("input", { type: "checkbox", checked: on, style: "width:22px;height:22px;min-height:0;flex:none" });
-  const sa = h("select", { "aria-label": "Schulart" }, h("option", { value: "" }, o.required ? "Bitte wählen …" : "Nicht eingerichtet (alles sichtbar)"), ...SCHULARTEN.map(x => h("option", { value: x }, SA_LABEL[x] || x)));
-  sa.value = cur ? cur.sa : "";
-  const maxK = h("input", { type: "number", min: 5, max: 13, inputmode: "numeric", value: cur ? cur.maxK : "", "aria-label": "Letzte Klasse" });
-  const lrows = langs.map(l => {
-    const on = cur && cur.langs.find(x => x.id === l.id), cb = chk(!!on);
-    const r = { l, cb, from: h("input", { type: "number", min: 1, max: 13, inputmode: "numeric", value: on ? on.from : "", placeholder: "ab Klasse", "aria-label": "Startklasse " + l.name, style: "max-width:110px" }) };
-    r.cr = contentRow(l, on || {}, !!o.required, () => sa.value, () => cb.checked); return r;
-  });
-  const books = allBooks(), exRows = SCHULARTEN.map(x => ({ x, cb: chk(!!(cur && cur.extra.includes(x))) })), exBooks = books.map(b => ({ b, cb: chk(!!(cur && (cur.extraBooks || []).includes(b))) }));
-  const info = h("div", { class: "muted", "aria-live": "polite" }), msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
-  const read = () => {
-    if (!sa.value) return o.required ? { err: "Bitte wähle deine Schulart." } : { prof: null };
-    const mk = Math.round(+maxK.value); if (!(mk >= 5 && mk <= 13)) return { err: "Die letzte Klasse muss zwischen 5 und 13 liegen." };
-    const ls = [];
-    for (const r of lrows) if (r.cb.checked) {
-      const f = Math.round(+r.from.value); if (!(f >= 1 && f <= 13)) return { err: "Bitte für " + r.l.name + " die Startklasse angeben (1 bis 13)." };
-      const c = r.cr.read(), nd = r.cr.need();
-      if (o.required && nd.book && !c.book) return { err: "Bitte wähle für " + r.l.name + " dein Lehrbuch." };
-      if (o.required && nd.lekt && !c.lekt) return { err: "Bitte wähle für " + r.l.name + " deinen Lektionsstand." };
-      ls.push({ id: r.l.id, from: f, ...(c.book ? { book: c.book } : {}), ...(c.lekt ? { lekt: c.lekt } : {}) });
-    }
-    if (!ls.length) return { err: "Bitte mindestens eine Sprache wählen." };
-    const mains = new Set(ls.map(x => x.book).filter(Boolean));
-    return { prof: { sa: sa.value, maxK: mk, langs: ls, extra: o.extra ? exRows.filter(r => r.cb.checked && r.x !== sa.value).map(r => r.x) : ((cur && cur.extra) || []).filter(x => x !== sa.value),
-      ...(o.extra ? (exBooks.some(r => r.cb.checked && !mains.has(r.b)) ? { extraBooks: exBooks.filter(r => r.cb.checked && !mains.has(r.b)).map(r => r.b) } : {}) : ((cur && cur.extraBooks) ? { extraBooks: cur.extraBooks } : {})) } };
-  };
-  const preview = () => {
-    if (!o.preview) return;
-    const r = read();
-    if (!r.prof) { info.textContent = r.err || "Ohne Profil gilt der Faktor 1,00 und alle Vokabeln sind sichtbar."; return; }
-    const f = factorOf(r.prof), tp = thresholds(LVL_P, f, 5), te = thresholds(LVL_E, f, 1), pick = a => [1, 4, 9, 14].map(i => a[i]).join(" / ");
-    info.textContent = "Sprachjahre: " + sjOf(r.prof) + " · Faktor " + fmtF(f) + ". Punkte für Level 2 / 5 / 10 / 15: " + pick(tp) + ". Prüfungen mit 100 % dafür: " + pick(te) + ".";
-  };
-  sa.addEventListener("change", () => { if (sa.value) maxK.value = SA_MAXK[sa.value]; lrows.forEach(r => r.cr.refresh()); preview(); });
-  maxK.addEventListener("input", preview);
-  lrows.forEach(r => { r.cb.addEventListener("change", () => { if (r.cb.checked && !r.from.value) r.from.value = [5, 7, 9][Math.min(lrows.filter(x => x.cb.checked).length - 1, 2)]; r.cr.refresh(); preview(); }); r.from.addEventListener("input", preview); });
-  preview();
-  const nodes = [h("div", null, h("label", { class: "f" }, "Schulart"), sa), h("div", null, h("label", { class: "f" }, "Letzte Klasse (5 bis 13)"), maxK),
-    h("div", { class: "stack" }, h("label", { class: "f" }, "Sprachen, Startklasse und Schulstoff"), ...lrows.map(r => h("div", { class: "stack", style: "gap:8px" }, h("div", { class: "row", style: "flex-wrap:nowrap;gap:12px" }, r.cb, h("span", { class: "grow" }, r.l.name), r.from), r.cr.el)))];
-  if (o.extra) {
-    nodes.push(h("div", { class: "stack" }, h("label", { class: "f" }, "Zusätzlich freigegebene Schularten (zählen als Bonus, ohne den Maßstab zu erhöhen)"), ...exRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, SA_LABEL[r.x] || r.x)))));
-    if (books.length) nodes.push(h("div", { class: "stack" }, h("label", { class: "f" }, "Zusätzlich freigegebene Lehrbücher (sonst sieht die Person nur ihr eigenes)"), ...exBooks.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, r.b)))));
-  }
-  return { read, info, msg, nodes };
-}
-async function profileDialog(k) {
-  if (!S.settings.langs.length) { toast("Bitte zuerst eine Sprache anlegen."); return; }
-  const cur = cleanProf(k.prof);
-  await modal("Profil: " + k.name, (box, close) => {
-    const f = buildProfileForm(cur, { extra: true, preview: true });
-    const go = async btn => {
-      const r = f.read(); if (r.err) { f.msg.textContent = r.err; return; }
-      f.msg.textContent = ""; btn.disabled = true;
-      try {
-        await bumpLevels(k.id, false);                     /* erreichte Level sichern, bevor sich der Maßstab ändert */
-        const prof = r.prof ? { ...r.prof, ts: Date.now(), ...(cur && cur.chk ? { chk: cur.chk } : {}) } : null;
-        await wupdate("app/settings", { kids: kidsOf().map(x => { if (x.id !== k.id) return x; const { prof: _old, ...rest } = x; return prof ? { ...rest, prof } : rest; }) });
-        close(true); toast("Profil gespeichert."); renderAll();
-      } catch (e) { btn.disabled = false; toastErr(e); }
-    };
-    box.append(h("p", { class: "muted", style: "margin:0" }, "Die Person füllt ihr Profil beim ersten Start selbst aus und bestätigt Lehrbuch und Lektionsstand jede Woche. Hier kannst du alles ändern, auch Zusatz-Schularten und Zusatz-Lehrbücher freigeben. Aus Schulart, letzter Klasse und Sprachen ergibt sich der Maßstab für die Level."),
-      ...f.nodes, f.info, f.msg, h("div", { class: "row" }, h("button", { class: "btn parent", onclick: e => go(e.currentTarget) }, "Speichern"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
-  }, { sticky: true });
-}
-function profileGate(kid) {
-  const k = kidObj(kid), w = h("div", { class: "stack" });
-  if (!S.settings.langs.length) { w.append(h("div", { class: "banner warn" }, "Es sind noch keine Sprachen vorhanden. Bitte den Administrator fragen.")); return w; }
-  const f = buildProfileForm(null, { required: true, preview: false });
-  const go = async btn => {
-    const r = f.read(); if (r.err || !r.prof) { f.msg.textContent = r.err || "Bitte wähle deine Schulart."; return; }
-    if (!S.canWrite) { f.msg.textContent = "Mit diesem Zugang kann gerade nichts gespeichert werden."; return; }
-    f.msg.textContent = ""; btn.disabled = true;
-    try {
-      const now = Date.now();
-      await wupdate("app/settings", { kids: kidsOf().map(x => x.id === kid ? { ...x, prof: { ...r.prof, ts: now, chk: now } } : x) });
-      toast("Danke! Dein Profil ist gespeichert."); renderAll(); window.scrollTo(0, 0);
-    } catch (e) { btn.disabled = false; toastErr(e, "Das Profil konnte nicht gespeichert werden."); }
-  };
-  w.append(h("div", { class: "card stack" }, h("h2", null, "Hallo, " + k.name + "! Zuerst dein Profil"),
-    h("p", { style: "margin:0" }, "Bitte fülle dieses Profil einmal aus. Danach geht es sofort weiter. So siehst du nur die Vokabeln aus deinem Lehrbuch, die in der Schule schon dran waren, und deine Level werden fair berechnet."),
-    h("p", { class: "muted", style: "margin:0" }, "Letzte Klasse: bis zu welcher Klasse du an deiner Schulart bleibst (z. B. 10 an der Realschule). Startklasse: ab welcher Klasse du die Sprache hast. Lehrbuch und Lektionsstand bestätigst du danach jede Woche. Alles andere ändert nur der Administrator."),
-    ...f.nodes, f.msg, h("button", { class: "btn", onclick: e => go(e.currentTarget) }, "Profil speichern")));
-  return w;
-}
 
 /* ---- Wochen-Check: Lehrbuch und Lektionsstand ---- */
-function hasChoices(kid) { const k = kidObj(kid); return profOn(k) && k.prof.langs.some(pl => lessonsFor(pl.id, k.prof.sa, pl.book).length > 0 || booksFor(pl.id, k.prof.sa).length > 1); }
 const needWeekly = kid => { const k = kidObj(kid); return !!(k && k.active !== false && profOn(k) && !parentOn() && (Date.now() - (k.prof.chk || 0)) > WEEK && hasChoices(kid)); };
-function contentForm(kid) {
-  const k = kidObj(kid), p = k.prof, rows = [];
-  p.langs.forEach(pl => { const l = (S.settings.langs || []).find(x => x.id === pl.id); if (!l) return; const cr = contentRow(l, pl, true, () => p.sa, () => true); if (cr.has()) rows.push({ pl, cr }); });
-  const msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
-  const read = () => {
-    for (const r of rows) { const c = r.cr.read(), nd = r.cr.need(); const nm = langName(r.pl.id); if (nd.book && !c.book) return { err: "Bitte wähle für " + nm + " dein Lehrbuch." }; if (nd.lekt && !c.lekt) return { err: "Bitte wähle für " + nm + " deinen Lektionsstand." }; }
-    const now = Date.now();
-    return { prof: { ...p, langs: p.langs.map(pl => { const r = rows.find(x => x.pl.id === pl.id); if (!r) return pl; const c = r.cr.read(), o = { ...pl }; if (c.book) o.book = c.book; else delete o.book; if (c.lekt) o.lekt = c.lekt; else delete o.lekt; return o; }), ts: now, chk: now } };
-  };
-  return { nodes: rows.map(r => h("div", { class: "stack", style: "gap:6px" }, h("b", null, langName(r.pl.id)), r.cr.el)), read, msg };
-}
 async function saveContent(kid, prof) { await wupdate("app/settings", { kids: kidsOf().map(x => x.id === kid ? { ...x, prof } : x) }); }
 function weeklyGate(kid) {
   const k = kidObj(kid), f = contentForm(kid);
@@ -3141,13 +3095,6 @@ async function contentDialog(kid) {
       h("div", { class: "row" }, h("button", { class: "btn", onclick: e => go(e.currentTarget) }, "Speichern"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
   }, { sticky: true });
 }
-function contentCard(kid) {
-  const k = kidObj(kid), p = k.prof, line = p.langs.filter(l => l.book || l.lekt).map(l => langName(l.id) + ": " + [l.book, l.lekt ? "bis Lektion " + l.lekt : ""].filter(Boolean).join(" · ")).join(" | ");
-  return h("div", { class: "card row", style: "justify-content:space-between;flex-wrap:nowrap" },
-    h("div", null, h("b", null, "Schulstoff"), h("div", { class: "muted" }, line || "Noch nicht angegeben"), h("div", { class: "muted", style: "font-size:12px" }, p.chk ? "Nächste Abfrage am " + new Date(p.chk + WEEK).toLocaleDateString("de-DE") : "Abfrage beim nächsten Start")),
-    h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => contentDialog(kid) }, "Ändern"));
-}
-const gateFor = kid => needProfile(kid) ? profileGate(kid) : needWeekly(kid) ? weeklyGate(kid) : null;
 
 /* ---- Kapitel mit Lehrbuch ---- */
 function readyChapters(kid) {
@@ -3165,7 +3112,7 @@ async function startChapterExam(kid, lang, t) {
   if (S.busy) return;
   const run = S.exams[kid];
   if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung ersetzen?", "Die bisherigen Antworten in der laufenden Prüfung gehen verloren.", "Neue Prüfung starten", true))) return;
-  const dir = S.hdir[kid] || cfgOf(kid).dir || "f2d";
+  const d0 = S.hdir[kid] || cfgOf(kid).dir || "f2d", dir = isHear(d0) ? "f2d" : d0;
   const items = examWords(lang, { s: t[0] || "-", k: t[1] || "-", l: t[2] || "-", b: t[3] || "-" }).map(({ w, n }) => ({ n, f: w.f, d: w.d, ...qa(w, dir), a: "", ok: null }));
   if (!items.length) { toast("Zu diesem Kapitel gibt es keine Vokabeln."); return; }
   if (items.length > EXAM_MAX) { toast("Das Kapitel ist für eine Prüfung zu groß. Bitte den Administrator fragen."); return; }
@@ -3176,6 +3123,502 @@ async function startChapterExam(kid, lang, t) {
     await wset("exam/" + kid, exam); S.exams[kid] = exam; S.tab = "lernen"; S.mode = "pruefung"; toast("Kapitelprüfung gestartet. Viel Erfolg!");
   } catch (e) { toastErr(e, "Die Prüfung konnte nicht gestartet werden."); }
   S.busy = false; renderAll(); window.scrollTo(0, 0);
+}
+
+/* ------------------------------------------------------------------ Schüler oder freies Lernen, Startklasse, Halbjahr- und Jahresende-Abfrage */
+const FREE_SJ = 4;                                                         /* Freies Lernen: Lernhorizont je Sprache in Jahren */
+const isFree = p => !!(p && p.mode === "frei");
+const validMD = v => /^\d{1,2}-\d{1,2}$/.test(String(v || ""));
+function schoolDates() {
+  const f = (v, d) => { const m = /^(\d{1,2})-(\d{1,2})$/.exec(String(v || "")); return m && +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31 ? { m: +m[1], d: +m[2] } : d; };
+  const s = S.settings || {}; return { hj: f(s.hjDate, { m: 2, d: 1 }), je: f(s.jeDate, { m: 7, d: 1 }) };
+}
+/* Für ein neues oder ergänztes Profil gilt alles bis heute als abgefragt */
+function schoolMarks(now) {
+  const sd = schoolDates(), y = now.getFullYear();
+  return { hj: now >= new Date(y, sd.hj.m - 1, sd.hj.d) ? y : y - 1, je: now >= new Date(y, sd.je.m - 1, sd.je.d) ? y : y - 1 };
+}
+function schoolDue(p, now) {
+  if (!p || p.mode !== "schule") return null;
+  const sd = schoolDates(), y = now.getFullYear(), jeD = new Date(y, sd.je.m - 1, sd.je.d), hjD = new Date(y, sd.hj.m - 1, sd.hj.d), jeP = now >= jeD ? y : y - 1;
+  if ((p.je || 0) < jeP) return { type: "je", year: jeP };
+  if (now >= hjD && now < jeD && (p.hj || 0) < y) return { type: "hj", year: y };
+  return null;
+}
+const needSchool = kid => { const k = kidObj(kid); return (k && k.active !== false && !parentOn() && profOn(k) && k.prof.mode === "schule") ? schoolDue(k.prof, new Date()) : null; };
+/* Sprachjahre: Schüler zählen ab Startklasse mit dem Programm (spätestens ab Beginn der Sprache), Wiederholungen geben ein Jahr dazu */
+function sjOf(prof) {
+  if (isFree(prof)) return prof.langs.length * FREE_SJ;
+  const st = prof.startK || 0;
+  return prof.langs.reduce((n, l) => n + Math.max(1, (prof.maxK || 13) - Math.max(l.from, st) + 1), 0) + (prof.rep || 0) * prof.langs.length;
+}
+function applySchool(p, ch, o) {
+  const n = { ...p }, y = o.due.year;
+  if (ch === "up") n.k = (p.k || 0) + 1;
+  if (ch === "rep") n.rep = (p.rep || 0) + 1;
+  if (ch === "down") { n.sa = o.sa; n.k = o.k; n.maxK = (o.sa === p.sa && p.maxK) ? p.maxK : SA_MAXK[o.sa]; n.extra = (p.extra || []).filter(x => x !== o.sa); n.startK = Math.min(p.startK || o.k, o.k); }
+  const done = ch === "free" || (n.mode === "schule" && n.k > n.maxK);                  /* Schulzeit zu Ende: ab jetzt freies Lernen */
+  if (done) { n.mode = "frei"; ["sa", "maxK", "k", "startK", "hj", "je", "rep"].forEach(f => delete n[f]); n.extra = []; }
+  else { if (o.due.type === "je") { n.je = y; n.hj = y; } else n.hj = y; }
+  if (ch === "up" || ch === "rep" || ch === "down" || done) { delete n.chk; n.langs = (n.langs || []).map(l => { const { lekt, ...r } = l; return r; }); }   /* neuer Stoff: Lektionsstand neu abfragen */
+  n.ts = o.now.getTime(); return n;
+}
+/* Neuere Angaben der Person (Lehrbuch, Lektion, Schulstatus) gewinnen, alles andere bleibt beim Basisprofil */
+function buildProfileForm(cur, o) {
+  const langs = S.settings.langs;
+  const chk = on => h("input", { type: "checkbox", checked: on, style: "width:22px;height:22px;min-height:0;flex:none" });
+  const mode = h("select", { "aria-label": "Ich bin" }, h("option", { value: "schule" }, "Schüler/in"), h("option", { value: "frei" }, "Freies Lernen (ohne Schule)"));
+  mode.value = cur && cur.mode === "frei" ? "frei" : "schule";
+  const isF = () => mode.value === "frei";
+  const sa = h("select", { "aria-label": "Schulart" }, h("option", { value: "" }, o.required ? "Bitte wählen …" : "Nicht eingerichtet (alles sichtbar)"), ...SCHULARTEN.map(x => h("option", { value: x }, SA_LABEL[x] || x)));
+  sa.value = cur && cur.sa ? cur.sa : "";
+  const kNow = h("input", { type: "number", min: 5, max: 13, inputmode: "numeric", value: cur && cur.k ? cur.k : "", "aria-label": "Klasse jetzt" });
+  const maxK = h("input", { type: "number", min: 5, max: 13, inputmode: "numeric", value: cur && cur.maxK ? cur.maxK : "", "aria-label": "Letzte Klasse" });
+  const startK = o.extra ? h("input", { type: "number", min: 5, max: 13, inputmode: "numeric", value: cur && cur.startK ? cur.startK : "", placeholder: "wie jetzige Klasse", "aria-label": "Start mit dem Programm in Klasse" }) : null;
+  const lrows = langs.map(l => {
+    const on = cur && cur.langs.find(x => x.id === l.id), cb = chk(!!on);
+    const r = { l, cb, from: h("input", { type: "number", min: 1, max: 13, inputmode: "numeric", value: on ? on.from : "", placeholder: "ab Klasse", "aria-label": "Startklasse " + l.name, style: "max-width:110px" }) };
+    r.cr = contentRow(l, on || {}, !!o.required, () => isF() ? "" : sa.value, () => cb.checked); return r;
+  });
+  const books = allBooks(), exRows = TAGSA.map(x => ({ x, cb: chk(!!(cur && (cur.extra || []).includes(x))) })), exBooks = books.map(b => ({ b, cb: chk(!!(cur && (cur.extraBooks || []).includes(b))) }));
+  const info = h("div", { class: "muted", "aria-live": "polite" }), msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
+  const read = () => {
+    const free = isF(); let mk = 0, kn = 0, st = 0;
+    if (!free) {
+      if (!sa.value) return o.required ? { err: "Bitte wähle deine Schulart." } : (o.extra ? { prof: null } : { err: "Bitte wähle deine Schulart." });
+      kn = Math.round(+kNow.value); if (!(kn >= 5 && kn <= 13)) return { err: "Bitte gib deine Klasse jetzt an (5 bis 13)." };
+      mk = Math.round(+maxK.value); if (!(mk >= 5 && mk <= 13)) return { err: "Die letzte Klasse muss zwischen 5 und 13 liegen." };
+      if (kn > mk) return { err: "Die Klasse kann nicht höher sein als die letzte Klasse." };
+      st = startK && startK.value ? Math.round(+startK.value) : ((cur && cur.startK) || kn); if (!(st >= 5 && st <= 13)) return { err: "Der Start mit dem Programm muss in Klasse 5 bis 13 liegen." };
+    }
+    const ls = [];
+    for (const r of lrows) if (r.cb.checked) {
+      let f = 5; if (!free) { f = Math.round(+r.from.value); if (!(f >= 1 && f <= 13)) return { err: "Bitte für " + r.l.name + " die Startklasse angeben (1 bis 13)." }; }
+      const c = r.cr.read(), nd = r.cr.need();
+      if (o.required && nd.book && !c.book) return { err: "Bitte wähle für " + r.l.name + " dein Lehrbuch oder Wörterbuch." };
+      if (o.required && nd.lekt && !c.lekt) return { err: "Bitte wähle für " + r.l.name + " deinen Lektionsstand." };
+      ls.push({ id: r.l.id, from: f, ...(c.book ? { book: c.book } : {}), ...(c.lekt ? { lekt: c.lekt } : {}), ...(c.topics && c.topics.length ? { topics: c.topics } : {}) });
+    }
+    if (!ls.length) return { err: "Bitte mindestens eine Sprache wählen." };
+    const mains = new Set(ls.map(x => x.book).filter(Boolean)), marks = schoolMarks(new Date()), eb = o.extra ? exBooks.filter(r => r.cb.checked && !mains.has(r.b)).map(r => r.b) : ((cur && cur.extraBooks) || []);
+    return { prof: { mode: free ? "frei" : "schule", ...(free ? {} : { sa: sa.value, maxK: mk, k: kn, startK: st }), langs: ls,
+      extra: free ? [] : (o.extra ? exRows.filter(r => r.cb.checked && r.x !== sa.value).map(r => r.x) : ((cur && cur.extra) || []).filter(x => x !== sa.value)), ...(eb.length ? { extraBooks: eb } : {}),
+      since: (cur && cur.since) || Date.now(), ...(free ? {} : { hj: (cur && cur.hj) || marks.hj, je: (cur && cur.je) || marks.je }), ...(cur && cur.rep && !free ? { rep: cur.rep } : {}) } };
+  };
+  const preview = () => {
+    if (!o.preview) return;
+    const r = read();
+    if (!r.prof) { info.textContent = r.err || "Ohne Profil gilt der Faktor 1,00 und alle Vokabeln sind sichtbar."; return; }
+    const f = factorOf(r.prof), tp = thresholds(LVL_P, f * POINT_SCALE, 5), te = thresholds(LVL_E, f, 1), pick = a => [1, 4, 9, 14].map(i => a[i]).join(" / ");
+    info.textContent = "Sprachjahre: " + sjOf(r.prof) + " · Faktor " + fmtF(f) + ". Punkte für Level 2 / 5 / 10 / 15: " + pick(tp) + ". Prüfungen mit 100 % dafür: " + pick(te) + ".";
+  };
+  const schoolBox = h("div", { class: "stack" }, h("div", null, h("label", { class: "f" }, "Schulart"), sa), h("div", null, h("label", { class: "f" }, "In welcher Klasse bist du jetzt? (5 bis 13)"), kNow), h("div", null, h("label", { class: "f" }, "Letzte Klasse an dieser Schulart (5 bis 13)"), maxK),
+    startK ? h("div", null, h("label", { class: "f" }, "Start mit dem Programm in Klasse (leer = jetzige Klasse)"), startK) : null);
+  const exSaBox = o.extra ? h("div", { class: "stack" }, h("label", { class: "f" }, "Zusätzlich freigegebene Schularten und eigene Wörterbücher (zählen als Bonus, ohne den Maßstab zu erhöhen)"), ...exRows.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, SA_LABEL[r.x] || r.x)))) : null;
+  const showMode = () => { schoolBox.classList.toggle("hide", isF()); if (exSaBox) exSaBox.classList.toggle("hide", isF()); lrows.forEach(r => { r.from.classList.toggle("hide", isF()); r.cr.refresh(); }); };
+  mode.addEventListener("change", () => { showMode(); preview(); });
+  sa.addEventListener("change", () => { if (sa.value) maxK.value = SA_MAXK[sa.value]; lrows.forEach(r => r.cr.refresh()); preview(); });
+  [maxK, kNow].forEach(e => e.addEventListener("input", preview)); if (startK) startK.addEventListener("input", preview);
+  lrows.forEach(r => { r.cb.addEventListener("change", () => { if (r.cb.checked && !r.from.value) r.from.value = [5, 7, 9][Math.min(lrows.filter(x => x.cb.checked).length - 1, 2)]; r.cr.refresh(); preview(); }); r.from.addEventListener("input", preview); });
+  showMode(); preview();
+  const nodes = [h("div", null, h("label", { class: "f" }, "Ich bin"), mode), schoolBox,
+    h("div", { class: "stack" }, h("label", { class: "f" }, "Sprachen, Startklasse und Schulstoff"), ...lrows.map(r => h("div", { class: "stack", style: "gap:8px" }, h("div", { class: "row", style: "flex-wrap:nowrap;gap:12px" }, r.cb, h("span", { class: "grow" }, r.l.name), r.from), r.cr.el)))];
+  if (exSaBox) nodes.push(exSaBox);
+  if (o.extra && books.length) nodes.push(h("div", { class: "stack" }, h("label", { class: "f" }, "Zusätzlich freigegebene Lehrbücher (sonst sieht die Person nur ihr eigenes)"), ...exBooks.map(r => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" }, r.cb, h("span", null, r.b)))));
+  return { read, info, msg, nodes };
+}
+async function profileDialog(k) {
+  if (!S.settings.langs.length) { toast("Bitte zuerst eine Sprache anlegen."); return; }
+  const cur = cleanProf(k.prof);
+  await modal("Profil: " + k.name, (box, close) => {
+    const f = buildProfileForm(cur, { extra: true, preview: true });
+    const go = async btn => {
+      const r = f.read(); if (r.err) { f.msg.textContent = r.err; return; }
+      f.msg.textContent = ""; btn.disabled = true;
+      try {
+        await bumpLevels(k.id, false);                     /* erreichte Level sichern, bevor sich der Maßstab ändert */
+        const prof = r.prof ? { ...r.prof, ts: Date.now(), ...(cur && cur.chk ? { chk: cur.chk } : {}) } : null;
+        await wupdate("app/settings", { kids: kidsOf().map(x => { if (x.id !== k.id) return x; const { prof: _old, ...rest } = x; return prof ? { ...rest, prof } : rest; }) });
+        close(true); toast("Profil gespeichert."); renderAll();
+      } catch (e) { btn.disabled = false; toastErr(e); }
+    };
+    box.append(h("p", { class: "muted", style: "margin:0" }, "Die Person füllt ihr Profil beim ersten Start selbst aus, bestätigt Lehrbuch und Lektionsstand jede Woche und beantwortet zum Halbjahr und zum Schuljahresende, ob sich in der Schule etwas geändert hat. Hier kannst du alles ändern, auch Zusatz-Schularten und Zusatz-Lehrbücher freigeben. Aus Schulart, Klasse, Start mit dem Programm und Sprachen ergibt sich der Maßstab für die Level."),
+      ...f.nodes, f.info, f.msg, h("div", { class: "row" }, h("button", { class: "btn parent", onclick: e => go(e.currentTarget) }, "Speichern"), h("button", { class: "btn sec", onclick: () => close(false) }, "Abbrechen")));
+  }, { sticky: true });
+}
+function profileGate(kid) {
+  const k = kidObj(kid), cur = cleanProf(k.prof), w = h("div", { class: "stack" });
+  if (!S.settings.langs.length) { w.append(h("div", { class: "banner warn" }, "Es sind noch keine Sprachen vorhanden. Bitte den Administrator fragen.")); return w; }
+  const f = buildProfileForm(cur, { required: true, preview: false });
+  const go = async btn => {
+    const r = f.read(); if (r.err || !r.prof) { f.msg.textContent = r.err || "Bitte wähle deine Schulart."; return; }
+    if (!S.canWrite) { f.msg.textContent = "Mit diesem Zugang kann gerade nichts gespeichert werden."; return; }
+    f.msg.textContent = ""; btn.disabled = true;
+    try {
+      const now = Date.now();
+      await bumpLevels(kid, false);
+      await wupdate("app/settings", { kids: kidsOf().map(x => x.id === kid ? { ...x, prof: { ...r.prof, ts: now, chk: now } } : x) });
+      toast("Danke! Dein Profil ist gespeichert."); renderAll(); window.scrollTo(0, 0);
+    } catch (e) { btn.disabled = false; toastErr(e, "Das Profil konnte nicht gespeichert werden."); }
+  };
+  w.append(h("div", { class: "card stack" }, h("h2", null, cur ? "Hallo, " + k.name + "! Bitte ergänze dein Profil" : "Hallo, " + k.name + "! Zuerst dein Profil"),
+    h("p", { style: "margin:0" }, cur ? "Es gibt neue Fragen: Bist du Schüler/in oder lernst du frei, und in welcher Klasse bist du jetzt? Danach geht es sofort weiter." : "Bitte fülle dieses Profil einmal aus. Danach geht es sofort weiter. So siehst du nur die Vokabeln aus deinem Lehrbuch, die in der Schule schon dran waren, und deine Level werden fair berechnet."),
+    h("p", { class: "muted", style: "margin:0" }, "Deine Klasse jetzt zählt als Start mit dem Programm: Wer später einsteigt, braucht für die Level weniger Punkte. Startklasse: ab welcher Klasse du die Sprache hast. Lehrbuch und Lektionsstand bestätigst du danach jede Woche, zum Halbjahr und zum Schuljahresende fragen wir kurz nach der Schule. Alles andere ändert nur der Administrator."),
+    ...f.nodes, f.msg, h("button", { class: "btn", onclick: e => go(e.currentTarget) }, "Profil speichern")));
+  return w;
+}
+/* Halbjahr und Schuljahresende: Rückstufung, Wiederholung, Versetzung */
+function schoolGate(kid, due) {
+  const k = kidObj(kid), p = cleanProf(k.prof), je = due.type === "je";
+  const opts = je ? [["up", "Ich bin in die nächste Klasse versetzt worden"], ["rep", "Ich wiederhole die Klasse"], ["down", "Ich wurde zurückgestuft (andere Schulart oder niedrigere Klasse)"], ["free", "Ich gehe nicht mehr zur Schule (ab jetzt freies Lernen)"]]
+    : [["same", "Alles wie bisher"], ["down", "Ich wurde zurückgestuft (andere Schulart oder niedrigere Klasse)"]];
+  const sel = h("select", { "aria-label": "Was trifft zu?" }, h("option", { value: "" }, "Bitte wählen …"), ...opts.map(([v, l]) => h("option", { value: v }, l)));
+  const saSel = h("select", { "aria-label": "Neue Schulart" }, ...SCHULARTEN.map(x => h("option", { value: x }, SA_LABEL[x] || x))); saSel.value = p.sa;
+  const kIn = h("input", { type: "number", min: 5, max: 13, inputmode: "numeric", value: p.k || "", "aria-label": "Neue Klasse" });
+  const downBox = h("div", { class: "stack hide" }, h("div", null, h("label", { class: "f" }, "Neue Schulart"), saSel), h("div", null, h("label", { class: "f" }, "Neue Klasse (5 bis 13)"), kIn));
+  sel.addEventListener("change", () => downBox.classList.toggle("hide", sel.value !== "down"));
+  const msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
+  const go = async btn => {
+    if (!sel.value) { msg.textContent = "Bitte wähle, was zutrifft."; return; }
+    let dk = 0; if (sel.value === "down") { dk = Math.round(+kIn.value); if (!(dk >= 5 && dk <= 13)) { msg.textContent = "Bitte gib die neue Klasse an (5 bis 13)."; return; } }
+    if (!S.canWrite) { msg.textContent = "Mit diesem Zugang kann gerade nichts gespeichert werden."; return; }
+    msg.textContent = ""; btn.disabled = true;
+    try {
+      await bumpLevels(kid, false);
+      const n = applySchool(p, sel.value, { now: new Date(), due, sa: saSel.value, k: dk });
+      await wupdate("app/settings", { kids: kidsOf().map(x => x.id === kid ? { ...x, prof: n } : x) });
+      toast(n.mode === "frei" && p.mode === "schule" ? "Schulzeit abgeschlossen: Ab jetzt lernst du frei." : "Danke! Deine Punkte-Level wurden neu berechnet."); renderAll(); window.scrollTo(0, 0);
+    } catch (e) { btn.disabled = false; toastErr(e, "Das konnte nicht gespeichert werden."); }
+  };
+  return h("div", { class: "stack" }, h("div", { class: "card stack" }, h("h2", null, (je ? "Schuljahresende" : "Halbjahr") + ", " + k.name),
+    h("p", { style: "margin:0" }, je ? "Das Schuljahr ist vorbei. Wie ist es ausgegangen?" : "Das Halbjahr ist vorbei. Hat sich in der Schule etwas geändert?"),
+    h("p", { class: "muted", style: "margin:0" }, "Deine Level werden danach passend zu deiner Schulzeit neu berechnet. Erreichte Level gehen nie verloren."),
+    h("div", null, h("label", { class: "f" }, "Was trifft zu?"), sel), downBox, msg, h("button", { class: "btn", onclick: e => go(e.currentTarget) }, "Bestätigen")));
+}
+function schoolDatesRow() {
+  const sd = schoolDates(), fmt = x => String(x.d).padStart(2, "0") + "." + String(x.m).padStart(2, "0") + ".";
+  const hjIn = h("input", { type: "text", value: fmt(sd.hj), inputmode: "numeric", "aria-label": "Halbjahr ab (TT.MM.)" }), jeIn = h("input", { type: "text", value: fmt(sd.je), inputmode: "numeric", "aria-label": "Schuljahresende ab (TT.MM.)" });
+  const parse = v => { const m = /^\s*(\d{1,2})\.(\d{1,2})\.?\s*$/.exec(v); return m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12 ? String(+m[2]).padStart(2, "0") + "-" + String(+m[1]).padStart(2, "0") : null; };
+  const save = async () => { const a = parse(hjIn.value), b = parse(jeIn.value); if (!a || !b) { toast("Bitte Datum als TT.MM. angeben, z. B. 01.02."); return; } try { await wupdate("app/settings", { hjDate: a, jeDate: b }); toast("Gespeichert."); } catch (e) { toastErr(e); } };
+  return h("div", { class: "stack", style: "padding-top:12px;border-top:1px solid var(--line)" }, h("b", null, "Schuljahr: Abfragetermine"),
+    h("div", { class: "muted" }, "Ab diesen Tagen fragen Schüler/innen einmal nach Rückstufung, Wiederholung oder Versetzung. Die Termine unterscheiden sich je nach Bundesland."),
+    h("div", { class: "row" }, h("div", { class: "grow" }, h("label", { class: "f" }, "Halbjahr ab"), hjIn), h("div", { class: "grow" }, h("label", { class: "f" }, "Schuljahresende ab"), jeIn)),
+    h("button", { class: "btn parent small", disabled: !S.canWrite, onclick: save }, "Speichern"));
+}
+const kidsCardX = () => { const c = kidsCard(); c.append(schoolDatesRow()); return c; };
+const gateFor = kid => { if (needProfile(kid)) return profileGate(kid); const d = needSchool(kid); if (d) return schoolGate(kid, d); return needWeekly(kid) ? weeklyGate(kid) : null; };
+
+/* ------------------------------------------------------------------ Eigene Wörterbücher mit Themenblöcken (unabhängig von der Schule) */
+/* Ein eigenes Wörterbuch ist technisch eine „Schulart“ mit dem Wert Frei: Lehrbuch = Name des Wörterbuchs, Lektion = Themenblock. */
+const SA_FREI = "Frei", TAGSA = [...SCHULARTEN, SA_FREI];
+const saText = v => v === SA_FREI ? "Eigenes Wörterbuch" : v;
+const NUMLIKE = /^[\d.,]+$/;
+const lessonText = v => NUMLIKE.test(v) ? "Lektion " + v : v;
+const tagText = t => {
+  const ls = t[2] ? String(t[2]).split("|") : [], num = ls.length && ls.every(x => NUMLIKE.test(x));
+  return [saText(t[0]), t[1] ? "Klasse " + t[1] : "", t[3] || "", ls.length ? (num ? (ls.length > 1 ? "Lektionen " : "Lektion ") + ls.join(", ") : ls.join(", ")) : ""].filter(Boolean).join(" · ");
+};
+const isDictBook = (lang, book) => !!book && (S.vocab[lang] || []).some(w => { const t = tg(w); return t[3] === book && t[0] === SA_FREI; });
+function topicsFor(lang, book) {
+  const s = new Set(); (S.vocab[lang] || []).forEach(w => { const t = tg(w); if (t[0] === SA_FREI && t[2] && !t[2].includes("|") && (!book || t[3] === book)) s.add(t[2]); }); return [...s].sort(natCmp);
+}
+function lessonsFor(lang, sa, book) {
+  const s = new Set();
+  (S.vocab[lang] || []).forEach(w => { const t = tg(w); if (t[0] === SA_FREI || !t[2] || t[2].includes("|")) return; if (sa && t[0] && t[0] !== sa) return; if (book && t[3] && t[3] !== book) return; s.add(t[2]); });
+  return [...s].sort(natCmp);
+}
+/* Sichtbarkeit: Schulart, Lehrbuch/Wörterbuch, Lektionsstand (nur Schulbücher) und gewählte Themenblöcke (nur eigene Wörterbücher) */
+function wordOk(kid, lang, w) {
+  const k = kidObj(kid); if (!profOn(k)) return true;
+  const t = tg(w), pl = k.prof.langs.find(x => x.id === lang), dict = t[0] === SA_FREI;
+  if (!saOk(kid, t[0])) return false;
+  if (pl && !bookOk(k, pl, t[3])) return false;
+  const main = !!pl && (!t[3] || t[3] === pl.book);
+  if (dict) return !(main && pl.topics && pl.topics.length && t[2] && !pl.topics.includes(t[2]));
+  if (pl && pl.lekt && main && !lektOk(pl.lekt, t[2])) return false;
+  return true;
+}
+function tagControls(init, bulk) {
+  const t = init || ["", "", "", ""], rnd = Math.random().toString(36).slice(2, 7), lid = "bl" + rnd, tid = "tl" + rnd;
+  const sel = h("select", { "aria-label": "Schulart" }, h("option", { value: "" }, bulk ? "Schulart: unverändert" : "Schulart: –"), bulk ? h("option", { value: "-" }, "Schulart leeren") : null,
+    TAGSA.map(x => h("option", { value: x, selected: t[0] === x }, saText(x))));
+  const k = h("input", { type: "text", inputmode: "numeric", maxlength: 3, placeholder: bulk ? "Klasse: unverändert (- leert)" : "Klasse (z. B. 5)", value: t[1] || "", "aria-label": "Klasse" });
+  const l = h("input", { type: "text", maxlength: 40, placeholder: "", value: t[2] || "", "aria-label": "Lektion" });
+  const bk = h("input", { type: "text", maxlength: 60, list: lid, placeholder: "", value: t[3] || "", "aria-label": "Lehrbuch" });
+  const kw = h("div", { class: "grow" }, k);
+  const hint = h("div", { class: "muted hide", style: "font-size:13px;flex-basis:100%" }, "Eigenes Wörterbuch (nichts mit der Schule): Trage unten den Namen des Wörterbuchs und den Themenblock ein, z. B. „Reise“ und „Restaurant“.");
+  const dl = h("datalist", { id: lid }, allBooks().map(b => h("option", { value: b }))), tl = h("datalist", { id: tid }, ...(() => { const s = new Set(); Object.keys(S.vocab).forEach(lg => topicsFor(lg).forEach(x => s.add(x))); return [...s].sort(natCmp).map(x => h("option", { value: x })); })());
+  const sync = () => {
+    const fr = sel.value === SA_FREI;
+    kw.classList.toggle("hide", fr); hint.classList.toggle("hide", !fr);
+    l.placeholder = fr ? "Themenblock (z. B. Restaurant)" : (bulk ? "Lektion: unverändert (- leert)" : "Lektion (z. B. 3)");
+    bk.placeholder = fr ? "Name des Wörterbuchs (z. B. Reise)" : (bulk ? "Lehrbuch: unverändert (- leert)" : "Lehrbuch (z. B. Prima A, Band 2)");
+    if (fr) l.setAttribute("list", tid); else l.removeAttribute("list");
+  };
+  sel.addEventListener("change", sync); sync();
+  return { el: h("div", { class: "row" }, h("div", { class: "grow" }, sel), kw, h("div", { class: "grow" }, l), hint, h("div", { style: "flex-basis:100%" }, bk, dl, tl)),
+    get: () => { const fr = sel.value === SA_FREI; return [sel.value, fr ? (bulk ? "-" : "") : k.value.trim(), l.value.trim(), bk.value.trim()]; } };
+}
+function contentRow(l, init, required, getSa, getActive) {
+  const book = h("select", { "aria-label": "Lehrbuch " + l.name }), lekt = h("select", { "aria-label": "Lektionsstand " + l.name });
+  const st = { book: init.book || "", lekt: init.lekt || "", topics: Array.isArray(init.topics) ? init.topics.slice() : [] };
+  const bookBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Lehrbuch oder Wörterbuch (" + l.name + ")"), book);
+  const lektBox = h("div", { class: "hide" }, h("label", { class: "f" }, "Lektionsstand (" + l.name + "): bis zu welcher Lektion bist du gerade?"), lekt);
+  const tSum = h("summary", { style: "cursor:pointer" }), tList = h("div", { class: "stack", style: "gap:8px;margin-top:10px;max-height:240px;overflow:auto" });
+  const topicBox = h("details", { class: "hide topicpick", style: "border:1px solid var(--line);border-radius:12px;padding:10px 12px" }, tSum, tList);
+  let books = [], lessons = [], topics = [];
+  const tLabel = () => { tSum.textContent = st.topics.length ? "Themenblöcke: " + st.topics.join(", ") : "Themenblöcke: alle"; };
+  const refresh = () => {
+    const sa = getSa(); books = booksFor(l.id, sa);
+    if (required && !st.book && books.length === 1) st.book = books[0];
+    if (st.book && !books.includes(st.book)) st.book = "";
+    const dicts = books.filter(b => isDictBook(l.id, b)), texts = books.filter(b => !isDictBook(l.id, b)), opt = b => h("option", { value: b }, b);
+    book.replaceChildren(h("option", { value: "" }, required ? "Lehrbuch oder Wörterbuch wählen …" : "Alle Bücher"),
+      ...(dicts.length && texts.length ? [h("optgroup", { label: "Eigene Wörterbücher" }, ...dicts.map(opt)), h("optgroup", { label: "Lehrbücher" }, ...texts.map(opt))] : books.map(opt)));
+    book.value = st.book;
+    const dict = isDictBook(l.id, st.book);
+    lessons = dict ? [] : lessonsFor(l.id, sa, st.book); topics = dict ? topicsFor(l.id, st.book) : [];
+    if (st.lekt && !lessons.includes(st.lekt)) st.lekt = "";
+    st.topics = st.topics.filter(x => topics.includes(x));
+    lekt.replaceChildren(h("option", { value: "" }, required ? "Lektionsstand wählen …" : "Alle Lektionen"), ...lessons.map(v => h("option", { value: v }, "Lektion " + v))); lekt.value = st.lekt;
+    tList.replaceChildren(h("div", { class: "row" }, h("button", { type: "button", class: "btn sec small", onclick: () => { st.topics = []; refresh(); } }, "Auswahl aufheben (= alle Themenblöcke)")),
+      ...topics.map(v => h("label", { class: "row", style: "flex-wrap:nowrap;gap:12px;cursor:pointer" },
+        h("input", { type: "checkbox", checked: st.topics.includes(v), style: "width:22px;height:22px;min-height:0;flex:none", onchange: e => { if (e.target.checked) { if (!st.topics.includes(v)) st.topics.push(v); } else st.topics = st.topics.filter(x => x !== v); tLabel(); } }), h("span", null, v))));
+    tLabel();
+    const act = getActive(); bookBox.classList.toggle("hide", !(act && books.length)); lektBox.classList.toggle("hide", !(act && lessons.length)); topicBox.classList.toggle("hide", !(act && topics.length));
+  };
+  book.addEventListener("change", () => { st.book = book.value; st.lekt = ""; st.topics = []; refresh(); });
+  lekt.addEventListener("change", () => { st.lekt = lekt.value; });
+  refresh();
+  return { el: h("div", { class: "stack", style: "gap:8px" }, bookBox, lektBox, topicBox), refresh, read: () => ({ book: st.book, lekt: st.lekt, topics: st.topics.slice() }), need: () => ({ book: books.length > 0, lekt: lessons.length > 0 }), has: () => books.length > 0 || lessons.length > 0 || topics.length > 0 };
+}
+function hasChoices(kid) {
+  const k = kidObj(kid); if (!profOn(k)) return false;
+  return k.prof.langs.some(pl => { const sa = k.prof.sa || "", dict = isDictBook(pl.id, pl.book); return booksFor(pl.id, sa).length > 1 || (dict ? topicsFor(pl.id, pl.book).length > 1 : lessonsFor(pl.id, sa, pl.book).length > 0); });
+}
+function contentForm(kid) {
+  const k = kidObj(kid), p = k.prof, rows = [];
+  p.langs.forEach(pl => { const l = (S.settings.langs || []).find(x => x.id === pl.id); if (!l) return; const cr = contentRow(l, pl, true, () => p.sa || "", () => true); if (cr.has()) rows.push({ pl, cr }); });
+  const msg = h("div", { class: "muted", style: "color:var(--bad);min-height:20px", role: "alert" });
+  const read = () => {
+    for (const r of rows) { const c = r.cr.read(), nd = r.cr.need(), nm = langName(r.pl.id); if (nd.book && !c.book) return { err: "Bitte wähle für " + nm + " dein Lehrbuch oder Wörterbuch." }; if (nd.lekt && !c.lekt) return { err: "Bitte wähle für " + nm + " deinen Lektionsstand." }; }
+    const now = Date.now();
+    return { prof: { ...p, langs: p.langs.map(pl => { const r = rows.find(x => x.pl.id === pl.id); if (!r) return pl; const c = r.cr.read(), o = { ...pl }; if (c.book) o.book = c.book; else delete o.book; if (c.lekt) o.lekt = c.lekt; else delete o.lekt; if (c.topics.length) o.topics = c.topics; else delete o.topics; return o; }), ts: now, chk: now } };
+  };
+  return { nodes: rows.map(r => h("div", { class: "stack", style: "gap:6px" }, h("b", null, langName(r.pl.id)), r.cr.el)), read, msg };
+}
+function contentCard(kid) {
+  const k = kidObj(kid), p = k.prof, line = p.langs.filter(l => l.book || l.lekt || (l.topics && l.topics.length)).map(l => langName(l.id) + ": " + [l.book, l.lekt ? "bis Lektion " + l.lekt : "", l.topics && l.topics.length ? "Themen: " + l.topics.join(", ") : ""].filter(Boolean).join(" · ")).join(" | ");
+  return h("div", { class: "card row", style: "justify-content:space-between;flex-wrap:nowrap" },
+    h("div", null, h("b", null, "Schulstoff und Wörterbücher"), h("div", { class: "muted" }, line || "Noch nicht angegeben"), h("div", { class: "muted", style: "font-size:12px" }, p.chk ? "Nächste Abfrage am " + new Date(p.chk + WEEK).toLocaleDateString("de-DE") : "Abfrage beim nächsten Start")),
+    h("button", { class: "btn small sec", disabled: !S.canWrite, onclick: () => contentDialog(kid) }, "Ändern"));
+}
+function cleanProf(p) {
+  if (!p || typeof p !== "object") return null;
+  const mode = p.mode === "frei" ? "frei" : p.mode === "schule" ? "schule" : "";
+  const sa = SCHULARTEN.includes(p.sa) ? p.sa : "";
+  if (mode !== "frei" && !sa) return null;
+  const langs = (Array.isArray(p.langs) ? p.langs : []).slice(0, 20).map(l => {
+    const o = { id: String((l && l.id) || "").slice(0, 40), from: Math.max(1, Math.min(13, Math.round(+(l && l.from)) || 5)) };
+    if (l && l.book) o.book = String(l.book).slice(0, 60);
+    if (l && l.lekt) o.lekt = String(l.lekt).slice(0, 12);
+    if (l && Array.isArray(l.topics)) { const tp = l.topics.map(x => String(x).slice(0, 40)).filter(Boolean).slice(0, 40); if (tp.length) o.topics = tp; }
+    return o;
+  }).filter(l => l.id);
+  if (!langs.length) return null;
+  const num = (x, lo, hi) => Number.isFinite(+x) && +x >= lo && +x <= hi ? Math.round(+x) : 0, big = x => Number.isFinite(+x) && +x > 0 ? +x : 0;
+  const eb = (Array.isArray(p.extraBooks) ? p.extraBooks : []).map(x => String(x).slice(0, 60)).filter(Boolean).slice(0, 30);
+  const out = { ...(sa ? { sa } : {}), ...(mode === "frei" ? {} : { maxK: Math.max(5, Math.min(13, Math.round(+p.maxK) || SA_MAXK[sa])) }), langs, extra: (Array.isArray(p.extra) ? p.extra : []).filter(x => TAGSA.includes(x) && x !== sa) };
+  if (mode) out.mode = mode;
+  if (mode !== "frei") { const k = num(p.k, 1, 13), sk = num(p.startK, 1, 13), rep = num(p.rep, 1, 9), hj = num(p.hj, 2000, 2100), je = num(p.je, 2000, 2100); if (k) out.k = k; if (sk) out.startK = sk; if (rep) out.rep = rep; if (hj) out.hj = hj; if (je) out.je = je; }
+  if (big(p.since)) out.since = big(p.since);
+  if (eb.length) out.extraBooks = eb;
+  if (big(p.ts)) out.ts = big(p.ts); if (big(p.chk)) out.chk = big(p.chk);
+  return out;
+}
+function profLabel(k) {
+  const p = k.prof; if (!profOn(k)) return "";
+  const who = isFree(p) ? "Freies Lernen" : (SA_LABEL[p.sa] || p.sa) + (p.k ? " · Klasse " + p.k : "") + " bis Klasse " + p.maxK + (p.rep ? " · " + p.rep + "× wiederholt" : "");
+  return who + " · " + p.langs.map(l => langName(l.id) + (isFree(p) ? "" : " ab " + l.from) + (l.book ? " · " + l.book : "") + (l.lekt ? " · bis Lektion " + l.lekt : "") + (l.topics && l.topics.length ? " · Themen: " + l.topics.join(", ") : "")).join(", ")
+    + ((p.extra || []).length ? " · zusätzlich " + p.extra.map(x => SA_LABEL[x] || x).join(", ") : "") + ((p.extraBooks || []).length ? " · Zusatzbücher: " + p.extraBooks.join(", ") : "")
+    + (p.since ? " · seit " + new Date(p.since).toLocaleDateString("de-DE") + (p.startK ? " (Start in Klasse " + p.startK + ")" : "") : "");
+}
+/* Neuere Angaben der Person (Lehrbuch, Lektion, Themen, Schulstatus) gewinnen, alles andere bleibt beim Basisprofil */
+function mergeProfContent(a, b) {
+  if (!a) return b; if (!b || (b.ts || 0) <= (a.ts || 0)) return a;
+  const o = { ...a, langs: a.langs.map(l => { const x = b.langs.find(y => y.id === l.id); if (!x) return l; const r = { ...l }; if (x.book) r.book = x.book; else delete r.book; if (x.lekt) r.lekt = x.lekt; else delete r.lekt; if (x.topics && x.topics.length) r.topics = x.topics; else delete r.topics; return r; }), ts: b.ts };
+  if (b.chk || a.chk) o.chk = Math.max(a.chk || 0, b.chk || 0); if (!b.chk && b.ts) delete o.chk;
+  if (b.mode) { ["sa", "maxK", "k", "startK", "rep", "mode", "hj", "je"].forEach(f => { if (b[f] !== undefined) o[f] = b[f]; else delete o[f]; }); o.extra = (o.extra || []).filter(x => x !== o.sa); }
+  if (b.since && !a.since) o.since = b.since;
+  return o;
+}
+
+/* ------------------------------------------------------------------ Versionsnummer und „Was ist neu?“ (erscheint einmal je Person und Version) */
+const APP_VERSION = "0.1";
+/* Neueste Version zuerst. Bei jeder Änderung einen neuen Eintrag oben einfügen und APP_VERSION erhöhen. */
+const CHANGELOG = [
+  { v: "0.1", date: "19.10.2026",
+    bugfix: [
+      "Tipp zeigt die ganze Lösung (z. B. „und; auch“)",
+      "Alle Bedeutungen einer Vokabel werden als richtig gewertet",
+      "Das aktuelle Wort bleibt beim Tippen mittig sichtbar",
+      "„Vokabel falsch erfasst?“ gibt es jetzt auch in der Lern-Version",
+      "Scan: Lautschrift wird nicht mehr mit übernommen",
+      "Scan: Doppelseiten werden richtig gelesen"
+    ],
+    comfort: [
+      "Tipps in Übungen",
+      "Fehler nach der Abgabe gelb markiert",
+      "Mehrfachauswahl von Vokabeln",
+      "Vokabeln durch Wischen markieren",
+      "Vokabeln von Nr. bis Nr. auswählen",
+      "Vokabelliste: der Reihe nach oder zuletzt hinzugefügt",
+      "Sammel-Änderung von Schulart, Klasse, Lektion und Lehrbuch",
+      "Scan-Funktion: Foto oder Screenshot wird zu Vokabeln",
+      "Admin-Bereich zum Ausklappen",
+      "Begrüßung nach Tageszeit",
+      "Animationen ein- und ausschaltbar",
+      "Wochen-Check für Lehrbuch und Lektionsstand"
+    ],
+    neu: [
+      "Hörverständnis: Hören → übersetzen",
+      "Hörverständnis: Hören → wiedergeben",
+      "Sprachausgabe je Sprachmappe einstellbar",
+      "Lernart-Kacheln im Reiter Lernen",
+      "Punkte und Level",
+      "Titel mit Adjektiv",
+      "Rangliste",
+      "Herausforderungen mit Belohnung",
+      "Kapitel-Rating",
+      "Kapitelprüfung",
+      "Prüfungen Wort für Wort mit Countdown",
+      "Profil als Schüler oder freies Lernen",
+      "Abfrage zu Halbjahr und Schuljahresende",
+      "PIN für jede Person",
+      "Admin-Zugang auf der Startseite",
+      "Eigene Wörterbücher mit Themenblöcken"
+    ],
+    soon: [
+      "Die Wort-Odyssee: Reise zur Bibliothek von Alexandria",
+      "Diktat: kurze, mittlere und lange Texte"
+    ] }
+];
+
+const seenKey = kid => "vt_seen_" + kid;
+const wnSeen = kid => { if (S.wnSeen && S.wnSeen[kid]) return S.wnSeen[kid]; try { return localStorage.getItem(seenKey(kid)); } catch (e) { return null; } };
+const wnMark = kid => { S.wnSeen = S.wnSeen || {}; S.wnSeen[kid] = APP_VERSION; try { localStorage.setItem(seenKey(kid), APP_VERSION); } catch (e) {} };
+function whatsNewDialog(kid) {
+  return modal("Was ist neu? · v " + APP_VERSION, (box, close) => {
+    const e = CHANGELOG[0];
+    const sec = (label, cls, items) => items && items.length ? h("div", { class: "stack", style: "gap:6px" }, h("div", null, h("span", { class: "pill " + cls }, label)),
+      h("ul", { style: "margin:0;padding-left:20px;display:grid;gap:4px" }, items.map(x => h("li", null, x)))) : null;
+    const older = CHANGELOG.slice(1);
+    box.append(h("p", { class: "muted", style: "margin:0" }, "Version " + e.v + " · Stand " + e.date),
+      sec("Bugfix", "bad", e.bugfix), sec("Comfort", "n", e.comfort), sec("Neu hinzugefügt", "ok", e.neu), sec("Coming soon", "mid", e.soon),
+      older.length ? h("details", null, h("summary", { style: "cursor:pointer;font-weight:600" }, "Frühere Versionen"), ...older.map(o => h("div", { class: "stack", style: "margin-top:10px" }, h("b", null, "v " + o.v + " · " + o.date), sec("Bugfix", "bad", o.bugfix), sec("Comfort", "n", o.comfort), sec("Neu hinzugefügt", "ok", o.neu)))) : null,
+      h("button", { class: "btn", onclick: () => close(true) }, "Verstanden"));
+  }, { sticky: true }).then(() => { if (kid) wnMark(kid); });
+}
+let wnOpen = false;
+async function maybeWhatsNew() {
+  if (wnOpen || !S.settings) return;
+  const kid = S.kid, k = kid && kidObj(kid);
+  if (!k || k.active === false || parentOn() || S.tab === "eltern") return;
+  if (pinsActive() && !kidAuthed(kid)) return;                                            /* noch nicht angemeldet */
+  if (S.tab === "start" && !S.home && activeKids().length !== 1) return;                  /* Personenauswahl */
+  if (needProfile(kid) || needSchool(kid) || needWeekly(kid)) return;                    /* erst die Pflichtabfragen */
+  const ex = S.exams[kid]; if (ex && ex.state === "OFFEN" && S.tab === "lernen" && S.mode === "pruefung") return;
+  if (document.querySelector(".overlay")) return;
+  const seen = wnSeen(kid); if (seen === APP_VERSION || seen === "*") return;
+  wnOpen = true; try { await whatsNewDialog(kid); } finally { wnOpen = false; }
+}
+
+/* ------------------------------------------------------------------ Hörverständnis, Sprachausgabe, Lern-Kacheln, Wort-Odyssee */
+const isHear = d => d === "h2f" || d === "h2d";
+const PTH = { own: 3, asg: 10, exam: 25 };                       /* Punkte im Hörverständnis (eigene Übung / Herausforderung oder Aufgabe / Prüfung) */
+const POINT_SCALE = 1.5;                                         /* Level-Schwellen sind höher, weil Punkte im Hörverständnis schneller kommen */
+const TTS_CODES = [["en-GB", "Englisch (britisch)"], ["en-US", "Englisch (amerikanisch)"], ["fr-FR", "Französisch"], ["es-ES", "Spanisch (Spanien)"], ["es-MX", "Spanisch (Lateinamerika)"], ["it-IT", "Italienisch"],
+  ["de-DE", "Deutsch"], ["pt-PT", "Portugiesisch"], ["nl-NL", "Niederländisch"], ["pl-PL", "Polnisch"], ["ru-RU", "Russisch"], ["tr-TR", "Türkisch"], ["sv-SE", "Schwedisch"]];
+function guessTts(name) {
+  const n = String(name || "").toLowerCase();
+  if (/engl/.test(n)) return "en-GB"; if (/franz|franc|french/.test(n)) return "fr-FR"; if (/span/.test(n)) return "es-ES"; if (/ital/.test(n)) return "it-IT"; if (/deutsch|german/.test(n)) return "de-DE";
+  if (/portug/.test(n)) return "pt-PT"; if (/nieder|dutch/.test(n)) return "nl-NL"; if (/poln|polish/.test(n)) return "pl-PL"; if (/russ/.test(n)) return "ru-RU"; if (/tür|tuer|turk/.test(n)) return "tr-TR"; if (/schwed/.test(n)) return "sv-SE";
+  return "";                                                      /* z. B. Latein: keine Sprachausgabe */
+}
+const ttsOf = lang => { const l = (S.settings && S.settings.langs || []).find(x => x.id === lang); return l ? (typeof l.tts === "string" ? l.tts : guessTts(l.name)) : ""; };
+const ttsSupported = () => typeof window !== "undefined" && "speechSynthesis" in window && typeof window.SpeechSynthesisUtterance === "function";
+const canSpeak = lang => ttsSupported() && !!ttsOf(lang);
+function pickVoice(code) {
+  const vs = (window.speechSynthesis.getVoices && window.speechSynthesis.getVoices()) || [], c = code.toLowerCase().replace("_", "-");
+  return vs.find(v => String(v.lang).toLowerCase().replace("_", "-") === c) || vs.find(v => String(v.lang).toLowerCase().replace("_", "-").startsWith(c.slice(0, 2))) || null;
+}
+const voiceMissing = lang => { if (!canSpeak(lang)) return false; const vs = (window.speechSynthesis.getVoices && window.speechSynthesis.getVoices()) || []; return vs.length > 0 && !pickVoice(ttsOf(lang)); };
+/* Vorgelesen wird nur die erste Variante ohne Klammern, Anmerkungen, Lautschrift und Platzhalter wie sb/sth */
+function speakText(f) {
+  let t = stripIPA(String(f || "")).replace(/\([^)]*\)/g, " ").replace(/\[[^\]]*\]/g, " ");
+  t = t.split(/[\/;]/)[0].replace(/\b(sb|sth|jdn|jdm|jds|etw|qn|qc|alg)\.?(?=\s|$)/gi, " ").replace(/[.…]+$/g, "");
+  return t.replace(/\s+/g, " ").trim();
+}
+/* Erwartete Antworten beim Hören → Wiedergeben: alle sinnvollen Schreibweisen, getrennt mit „;“ */
+function hearAnswers(f) {
+  const out = new Set(), add = x => { x = String(x || "").replace(/\s+/g, " ").trim(); if (x) out.add(x); };
+  String(f || "").split(";").forEach(part => {
+    add(speakText(part)); add(part.replace(/[()]/g, ""));
+    part.split("/").forEach(v => { add(speakText(v)); add(v.replace(/\([^)]*\)/g, " ")); });
+    add(part);
+  });
+  return [...out].join("; ");
+}
+function speak(text, lang) {
+  if (!canSpeak(lang) || !text) return false;
+  const u = new window.SpeechSynthesisUtterance(text); u.lang = ttsOf(lang); u.rate = 0.9;
+  const v = pickVoice(u.lang); if (v) u.voice = v;
+  try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch (e) { return false; }
+  return true;
+}
+function hearBtn(t, i, max) {
+  const get = () => ((curT && curT()) || t).items[i];
+  const b = h("button", { type: "button", class: "btn hearbtn", "aria-label": "Wort " + (i + 1) + " vorlesen" });
+  const sync = () => { const n = get().pl || 0, left = max ? Math.max(0, max - n) : null; b.textContent = "▶ Vorlesen" + (max ? " (noch " + left + "×)" : n ? " (" + n + "× gehört)" : ""); b.disabled = !!max && left <= 0; };
+  b.addEventListener("click", () => {
+    const it = get(); if (max && (it.pl || 0) >= max) return;
+    if (!ttsSupported()) { toast("Die Sprachausgabe gibt es auf diesem Gerät oder in dieser Ansicht nicht."); return; }
+    if (!canSpeak(t.lang)) { toast("Für diese Sprache gibt es keine Sprachausgabe."); return; }
+    if (voiceMissing(t.lang)) toast("Auf diesem Gerät ist keine passende Stimme installiert. Es klingt vielleicht nicht richtig.");
+    if (!speak(speakText(it.f), t.lang)) { toast("Das Vorlesen hat nicht geklappt."); return; }
+    it.pl = (it.pl || 0) + 1; sync(); if (typeof scheduleAnswerSave === "function") scheduleAnswerSave();
+  });
+  sync(); return b;
+}
+const playsSelect = init => { const e = h("select", { "aria-label": "Wiedergaben pro Wort" }, h("option", { value: "0" }, "Unbegrenzt"), ...[1, 2, 3, 5].map(n => h("option", { value: String(n) }, n + (n === 1 ? " Wiedergabe" : " Wiedergaben")))); e.value = String(init || 0); return e; };
+function pickDir(kid) {
+  const k = S.hkind[kid] || "vok", d = S.hdir[kid] || cfgOf(kid).dir || "f2d";
+  return k === "hoer" ? (isHear(d) ? d : "h2d") : (isHear(d) ? "f2d" : d);
+}
+function kindTiles(kid) {
+  const cur = S.hkind[kid] || "vok", defs = [["vok", "Vokabeln", "lesen und übersetzen"], ["hoer", "Hör\u00ADverständnis", "hören und antworten"], ["diktat", "Diktat", "bald verfügbar"]];
+  return h("div", { class: "kinds", role: "group", "aria-label": "Lernart" }, defs.map(([k, t, sub]) => h("button", { type: "button", class: "kind" + (cur === k ? " on" : ""), "aria-pressed": cur === k ? "true" : "false", disabled: k === "diktat",
+    onclick: () => { S.hkind[kid] = k; S.hdir[kid] = pickDir(kid); renderAll(); } }, h("b", null, t), h("span", { class: "muted" }, sub), k === "diktat" ? h("span", { class: "pill mid" }, "Coming soon") : null)));
+}
+/* ---- Die Wort-Odyssee (Vorschau) ---- */
+function odysseeView() {
+  const kid = S.kid, ls = allowedLangs(kid).map(l => l.name);
+  return h("div", { class: "stack" }, h("div", { class: "card stack" }, h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("h2", null, "Die Wort-Odyssee"), h("span", { class: "pill mid" }, "Coming soon")),
+    h("p", { style: "margin:0;font-style:italic;line-height:1.5" }, "Weit hinter dem Horizont, wo das Meer die Worte der ganzen Welt an Land spült, ragt die große Bibliothek von Alexandria auf. Man erzählt, ihre Hallen bewahren jedes Wort, das je gesprochen wurde, geschrieben auf Rollen aus Sonnenlicht, in Tinte aus Sternenstaub."),
+    h("p", { style: "margin:0;font-style:italic;line-height:1.5" }, "Doch ihre Tore öffnen sich nur denen, die die Sprachen der Welt kennen. Deine Reise beginnt an der Küste deiner ersten Sprache. Jede Aufgabe ist eine Insel, jedes gelöste Rätsel ein Stück der alten Karte. Sammle die Schlüssel, bezwinge die Stürme des Vergessens und finde den Weg in die verborgenen Hallen."),
+    h("p", { style: "margin:0;font-style:italic;line-height:1.5" }, "Für jede Sprache, die du lernst, wartet ein eigener Pfad. Die Segel werden gerade gesetzt. Bald legt dein Schiff ab."),
+    ls.length ? h("div", { class: "stack" }, h("b", null, "Deine Pfade"), h("div", { class: "row" }, ls.map(n => h("span", { class: "pill n" }, n)))) : null,
+    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Die Aufgaben der Odyssee werden nach und nach hinzugefügt.")));
+}
+/* ---- Vokabelliste: Markieren durch Wischen ---- */
+let vDrag = null;
+window.addEventListener("pointerup", () => { vDrag = null; }); window.addEventListener("pointercancel", () => { vDrag = null; });
+
+function ttsSelect(l) {
+  const e = h("select", { "aria-label": "Aussprache " + l.name, disabled: !S.canWrite }, h("option", { value: "" }, "Keine Sprachausgabe"), ...TTS_CODES.map(([c, n]) => h("option", { value: c }, n)));
+  e.value = typeof l.tts === "string" ? l.tts : guessTts(l.name);
+  e.addEventListener("change", async () => { try { await wupdate("app/settings", { langs: S.settings.langs.map(x => x.id === l.id ? { ...x, tts: e.value } : x) }); toast("Aussprache gespeichert."); } catch (er) { toastErr(er); } });
+  return e;
 }
 
 async function exportBackup() {
