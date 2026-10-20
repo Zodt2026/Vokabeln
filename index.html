@@ -523,14 +523,25 @@ function hintParts(sol, level) {
 }
 const hintText = (sol, level) => hintParts(sol, level).mask;
 const normExact = s => String(s == null ? "" : s).normalize("NFC").trim().replace(/\s+/g, " ");
+/* Trennzeichen , ; / sind gleichwertig, Leerzeichen davor und danach spielen keine Rolle */
+const canonSep = x => normExact(x).replace(/\s*[,;\/]\s*/g, " ; ");
 function isCorrect(ans, sol) {
   const a = normExact(ans);
   if (!a) return false;
-  const alts = String(sol).split(";").map(normExact).filter(Boolean);
-  if (alts.includes(a)) return true;
+  const ca = canonSep(a), alts = String(sol).split(";").map(normExact).filter(Boolean);
+  if (alts.some(x => canonSep(x) === ca) || canonSep(sol) === ca) return true;
   /* Mehrere Bedeutungen komplett eingetippt (z. B. „und; auch“, auch in anderer Reihenfolge): richtig, wenn jede einzelne stimmt */
-  const parts = a.split(";").map(normExact).filter(Boolean);
-  return parts.length > 1 && new Set(parts).size === parts.length && parts.every(p => alts.includes(p));
+  const parts = a.split(/[,;\/]/).map(normExact).filter(Boolean);
+  return parts.length > 1 && new Set(parts).size === parts.length && parts.every(p => alts.some(x => canonSep(x) === p));
+}
+/* Richtig, aber Leerzeichen oder Trennzeichen weichen von der Lösung ab: Unterschiede bleiben gelb markiert (zählt trotzdem als richtig) */
+function softDiff(ans, sol) {
+  const a = normExact(ans); if (!a) return null;
+  const ca = canonSep(a), cands = [...String(sol).split(";").map(normExact).filter(Boolean), normExact(sol)];
+  if (cands.some(c => c === a)) return null;
+  const c = cands.find(x => canonSep(x) === ca); if (!c) return null;
+  const r = alignAnswer(Array.from(a), Array.from(c));
+  return r.ops.some(o => o.k !== "ok") ? { ...r, target: c } : null;
 }
 /* ---- Abgegebene Antwort: Fehler gelb markieren (außer das ganze Wort ist falsch) ---- */
 function alignAnswer(a, s) {
@@ -542,7 +553,7 @@ function alignAnswer(a, s) {
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && D[i][j] === D[i - 1][j - 1] + (a[i - 1] === s[j - 1] ? 0 : 1)) { const eq = a[i - 1] === s[j - 1]; ops.push({ c: a[i - 1], k: eq ? "ok" : "bad" }); if (eq) match++; i--; j--; }
     else if (i > 0 && D[i][j] === D[i - 1][j] + 1) { ops.push({ c: a[i - 1], k: "bad" }); i--; }
-    else { ops.push({ c: "", k: "gap" }); j--; }
+    else { ops.push({ c: "", k: "gap", m: s[j - 1] }); j--; }
   }
   return { ops: ops.reverse(), match };
 }
@@ -556,10 +567,11 @@ function answerDiff(ans, sol) {
   return best && best.sim >= 0.5 ? best : null;     /* unter 50 % Übereinstimmung: ganzes Wort falsch, keine Markierung */
 }
 function ansView(df, i) {
-  const el = h("div", { class: "ansview", role: "group", "aria-label": "Deine Antwort zu Aufgabe " + (i + 1) + ", Fehler gelb markiert" });
+  const el = h("div", { class: "ansview", role: "group", "aria-label": "Deine Antwort zu Aufgabe " + (i + 1) + ", Abweichungen gelb markiert" });
   let k = null, buf = "";
-  const flush = () => { if (k === "ok" && buf) el.append(buf); else if (k === "bad" && buf) el.append(h("mark", { class: "err" }, buf)); else if (k === "gap") el.append(h("mark", { class: "err gap", title: "Hier fehlt ein Buchstabe" }, "_")); k = null; buf = ""; };
-  df.ops.forEach(o => { if (o.k !== k) { flush(); k = o.k; } buf += o.c; });
+  const gapTitle = m => /\s/.test(m || "") ? "Hier fehlt ein Leerzeichen" : /[,;\/]/.test(m || "") ? "Hier fehlt ein Satzzeichen" : "Hier fehlt ein Buchstabe";
+  const flush = () => { if (k === "ok" && buf) el.append(buf); else if (k === "bad" && buf) el.append(h("mark", { class: "err" }, buf)); k = null; buf = ""; };
+  df.ops.forEach(o => { if (o.k === "gap") { flush(); el.append(h("mark", { class: "err gap", title: gapTitle(o.m) }, "_")); return; } if (o.k !== k) { flush(); k = o.k; } buf += o.c; });
   flush(); return el;
 }
 async function submitTask() {
@@ -1395,7 +1407,9 @@ function examStatsCard() {
   return card;
 }
 function renderItems(wrap, t, open) {
-  if (!open && t.items.some(it => !it.ok && answerDiff(it.a, it.s))) wrap.append(h("p", { class: "span muted", style: "margin:0" }, "Gelb markiert: falsche oder zu viel getippte Buchstaben. Ein gelber Unterstrich zeigt einen fehlenden Buchstaben."));
+  const nWrong = !open ? t.items.filter(it => !it.ok && answerDiff(it.a, it.s)).length : 0, nSoft = !open ? t.items.filter(it => it.ok && softDiff(it.a, it.s)).length : 0;
+  if (nWrong) wrap.append(h("p", { class: "span muted", style: "margin:0" }, "Gelb markiert: falsche oder zu viel getippte Buchstaben. Ein gelber Unterstrich zeigt einen fehlenden Buchstaben." + (nSoft ? " Bei richtigen Antworten zeigt Gelb nur, wo Leerzeichen oder Satzzeichen anders geschrieben sind." : "")));
+  else if (nSoft) wrap.append(h("p", { class: "span muted", style: "margin:0" }, "Gelb markiert: hier sind Leerzeichen oder Satzzeichen anders geschrieben als in der Lösung. Das zählt trotzdem als richtig."));
   t.items.forEach((it, i) => {
     const cls = open ? "" : it.ok ? " right" : " wrong";
     const inp = h("input", { type: "text", value: it.a || "", disabled: !open || !S.canWrite, "data-key": "a" + i,
@@ -1426,14 +1440,15 @@ function renderItems(wrap, t, open) {
       fb.disabled = false; syncFlag();
     });
     syncFlag();
-    const df = !open && !it.ok ? answerDiff(it.a, it.s) : null;
-    const ansRow = h("div", { class: "ans ansrow" }, df ? ansView(df, i) : inp, tipBtn);
+    const df = !open && !it.ok ? answerDiff(it.a, it.s) : null, sd = !open && it.ok ? softDiff(it.a, it.s) : null;
+    const ansRow = h("div", { class: "ans ansrow" }, df ? ansView(df, i) : sd ? ansView(sd, i) : inp, tipBtn);
     wrap.append(h("div", { class: "card q" + cls },
       h("div", { class: "nr" }, String(i + 1)),
       h("div", { class: "txt" }, isHear(t.dir) && open ? hearBtn(t, i, t.plays || 0) : it.q),
       !open ? h("span", { class: "res " + (it.ok ? "ok" : "bad") }, it.ok ? "✓ richtig" : "✗ falsch") : null,
       ansRow, hintEl,
       !open && !it.ok ? h("div", { class: "sol" }, "Lösung: ", h("b", null, it.s)) : null,
+      sd ? h("div", { class: "sol" }, "Zählt als richtig. Schreibweise der Lösung: ", h("b", null, sd.target)) : null,
       !open && it.tip ? h("div", { class: "sol" }, "Tipp genutzt (" + it.tip + " von 2)") : null,
       h("div", { class: "flagrow" }, fb)));
   });
@@ -3480,7 +3495,8 @@ const CHANGELOG = [
       "„Vokabel falsch erfasst?“ gibt es jetzt auch in der Lern-Version",
       "Scan: Lautschrift wird nicht mehr mit übernommen",
       "Scan: Doppelseiten werden richtig gelesen",
-      "Der Bildschirm wackelt beim Üben nicht mehr"
+      "Der Bildschirm wackelt beim Üben nicht mehr",
+      "Fehlende Leerzeichen und andere Trennzeichen (, ; /) zählen nicht mehr als Fehler, Gelb bleibt als Hinweis"
     ],
     comfort: [
       "Tipps in Übungen",
