@@ -209,6 +209,15 @@ details.acc[open]>summary::after{content:"▾"}
 @media (max-width:420px){.kind b{font-size:13px}.kind .muted{font-size:11px}}
 @media (max-width:340px){.kind b{font-size:12px}}
 .hearbtn{font-size:18px;min-height:52px}
+.dkta{width:100%;min-height:220px;font-size:18px;line-height:1.5;font-family:inherit}
+.dkres{display:flex;flex-wrap:wrap;gap:6px 4px;font-size:18px;line-height:1.3}
+.dkw{display:inline-flex;flex-direction:column;align-items:flex-start;padding:2px 5px;border-radius:8px;border:1.5px solid transparent}
+.dkw small{font-size:12px;font-weight:500;color:var(--ink-soft)}
+.dkw.bad{background:var(--bad-bg);color:var(--bad);font-weight:600}.dkw.bad small{text-decoration:line-through}
+.dkw.miss{border-style:dashed;border-color:var(--bad);color:var(--bad);font-weight:600}
+.dkw.extra{color:var(--ink-soft);text-decoration:line-through}.dkw.extra small{text-decoration:none}
+.dkw.pun{background:var(--warn-bg)}
+.odymap svg{display:block;width:100%;max-width:460px;height:auto;margin:0 auto}
 .arch{position:fixed;inset:0;z-index:95;background:#000;touch-action:manipulation}.arch canvas{display:block}.archskip{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);right:12px;opacity:.85}
 @media (prefers-reduced-motion:reduce){.arch{display:none}}
 .pill.gift{background:#fff1b8;color:#5a4400;white-space:normal}
@@ -418,7 +427,7 @@ const fltLabel = f => {
 };
 const fltHas = f => !!(f && (f.s || f.k || f.l || f.b));
 const selMode = t => (t && t.sel) || (t && fltHas(t.flt) ? "tags" : "range");
-const selLabel = t => selMode(t) === "tags" ? (fltLabel(t.flt) || "alle Vokabeln") : "Nr. " + t.from + "–" + t.to;
+const selLabel = t => t && t.ody ? "Wort-Odyssee" : selMode(t) === "tags" ? (fltLabel(t.flt) || "alle Vokabeln") : "Nr. " + t.from + "–" + t.to;
 const matchFlt = (w, f) => { if (!f) return true; return vMatch(w, [f.s || "", f.k || "", f.l || "", f.b || ""]); };
 const vMatch = (w, vt) => { const t = tg(w); return vt.every((v, i) => !v || String(v).split("|").some(x => x === "-" ? t[i] === "" : t[i] === x)); };   /* mehrere Werte mit | getrennt (z. B. mehrere Lektionen) */
 
@@ -611,6 +620,7 @@ async function finalizeCounts(kid) {
     if (pct + 1e-9 >= PT.min) { const cat = (t.src === "admin" || t.asg) ? 2 : 1; pts = isHear(t.dir) ? (cat === 2 ? PTH.asg : PTH.own) : (cat === 2 ? PT.asg : PT.own); await awardPoints(kid, "t" + t.created, cat, pts, ptLabel(t), taskMeta(t)); }
     if (t.asg) await creditAsg(t.asg, "t" + t.created, pct);
     await recordChapRun(kid, t, pct);
+    if (t.ody) await odyRecord(kid, t.ody, pct);
   }
   await wupdate("task/" + kid, { counted: true, pts });
   S.tasks[kid] = { ...t, counted: true, pts };
@@ -751,7 +761,7 @@ function viewSig() {
   const v = Object.keys(S.vocab).map(k => k + ":" + S.vocab[k].reduce((n, w) => n + Object.values(w.c || {}).reduce((q, a) => q + a[0] + a[1] + a[2], 0) + w.f.length + w.d.length + (w.h || "").length + tg(w).join("|").length, 0) + "/" + S.vocab[k].length).join(",");
   const t = Object.values(S.tasks).map(x => [x.kid, x.state, x.created, x.counted, x.items.length, x.ok]);
   const ex = Object.values(S.exams).map(x => [x.kid, x.state, x.created, x.logged, x.items.length, x.ok]);
-  return JSON.stringify([S.settings, S.kid, S.home, S.hlang, t, ex, S.mode, S.examLog.length, v, S.log.length, S.sync, S.canWrite, S.booted, S.settingsLoaded, S.vocabLoaded, S.taskLoaded, S.examLoaded, !!S.db, asgSig(), ptsSig(), chapSig(), JSON.stringify([S.settings && S.settings.kids, S.settings && S.settings.chapPass, S.settings && S.settings.chapSecs])]);
+  return JSON.stringify([dkSig(), odySig(), S.odyLang || "", S.hkind[S.kid] || "", S.settings, S.kid, S.home, S.hlang, t, ex, S.mode, S.examLog.length, v, S.log.length, S.sync, S.canWrite, S.booted, S.settingsLoaded, S.vocabLoaded, S.taskLoaded, S.examLoaded, !!S.db, asgSig(), ptsSig(), chapSig(), JSON.stringify([S.settings && S.settings.kids, S.settings && S.settings.chapPass, S.settings && S.settings.chapSecs])]);
 }
 function softRender() {
   if (viewSig() === lastSig) return;          // nichts Sichtbares hat sich geändert
@@ -809,7 +819,7 @@ function renderAll() {
   const gate = (!noLogin && S.tab !== "start" && S.tab !== "eltern") ? gateFor(S.kid) : null, gated = !!gate;
   root.append(noLogin ? tilesView() : gated ? gate : S.tab === "start" ? startView() : S.tab === "lernen" ? lernenTab() : S.tab === "ziele" ? zieleView() : S.tab === "vokabeln" ? vokabelnView() : S.tab === "protokoll" ? protokollView() : elternView());
   root.append(tabsNav());
-  if (S.tab === "lernen" && !gated && !noLogin) { const ab = actionBar(); if (ab) root.append(ab); }
+  if (S.tab === "lernen" && !gated && !noLogin) { const ab = dkShown() ? dkBar() : actionBar(); if (ab) root.append(ab); }
   syncExamTimer();
   setTimeout(maybeWhatsNew, 200);
   if (keep) { const n = document.querySelector('[data-key="' + keep.key + '"]'); if (n) { n.focus({ preventScroll: true }); try { n.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
@@ -948,6 +958,8 @@ function personHome(kid, canSwitch) {
     h("b", null, t.state === "OFFEN" ? "Deine Übung läuft" : "Letzte Übung: " + t.ok + " von " + t.items.length + " richtig"),
     h("div", { class: "muted" }, t.langName + ", " + selLabel(t)),
     h("button", { class: "btn", onclick: () => { S.mode = "lernen"; S.tab = "lernen"; renderAll(); window.scrollTo(0, 0); } }, t.state === "OFFEN" ? "Weitermachen" : "Ergebnis ansehen")));
+  { const dd = S.dk[kid]; if (dd && dd.state === "OFFEN") w.append(h("div", { class: "card stack" }, h("b", null, "Dein Diktat läuft"), h("div", { class: "muted" }, dd.langName + ", " + dkBookName(dd.book)),
+    h("button", { class: "btn", onclick: () => { S.hkind[kid] = "diktat"; S.mode = "lernen"; S.tab = "lernen"; renderAll(); window.scrollTo(0, 0); } }, "Weiterschreiben"))); }
   { const pp = ptsOf(kid), li = levelInfo(kid), openA = asgOf(kid).filter(a => !a.doneAt);
     w.append(h("div", { class: "card stack" },
       h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" },
@@ -975,6 +987,11 @@ function personHome(kid, canSwitch) {
   const lang = langs.find(l => l.id === S.hlang), cats = catProgress(lang.id, kid), cfg = cfgOf(kid);
   const kind = S.hkind[kid] || "vok", dir = pickDir(kid), speakOk = kind !== "hoer" || canSpeak(lang.id);
   w.append(h("h3", null, "Wie möchtest du lernen?")); w.append(kindTiles(kid));
+  if (kind === "diktat") {
+    w.append(h("h3", null, lang.name + ": Diktat")); w.append(dkPanel(kid, lang));
+    w.append(h("div", { class: "row", style: "justify-content:space-between;align-items:center" }, h("span", { class: "muted", style: "font-size:13px" }, "Vokabeltrainer v " + APP_VERSION), h("button", { class: "btn small sec", onclick: () => whatsNewDialog(kid) }, "Was ist neu?")));
+    return w;
+  }
   w.append(h("h3", null, lang.name + ": was möchtest du üben?"));
   if (kind === "hoer" && !ttsSupported()) w.append(h("div", { class: "banner warn" }, "Die Sprachausgabe gibt es in dieser Ansicht oder auf diesem Gerät nicht. Bitte die Lern-Version im Browser nutzen."));
   else if (kind === "hoer" && !speakOk) w.append(h("div", { class: "banner warn" }, "Für " + lang.name + " gibt es keine Sprachausgabe. Bitte eine andere Sprache wählen."));
@@ -1045,7 +1062,7 @@ function buildPackage(kidIds, withStats) {
       return [x.f, x.d, x.h || "", c, tg(x)];
     });
   });
-  return { kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name, ...(typeof l.tts === "string" ? { tts: l.tts } : {}) })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, board: Object.fromEntries(activeKids().map(k => [k.id, boardStats(k.id)])), hjDate: schoolDates().hj ? String(schoolDates().hj.m).padStart(2, "0") + "-" + String(schoolDates().hj.d).padStart(2, "0") : "02-01", jeDate: String(schoolDates().je.m).padStart(2, "0") + "-" + String(schoolDates().je.d).padStart(2, "0"), chapPass: chapPass(), chapSecs: chapSecs(), chap: withStats ? Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])) : {}, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
+  return { dk: dkForPkg(ids), ody: odyOut(ids), kind: PKG_KIND, v: 1, created: new Date().toISOString(), langs: S.settings.langs.map(l => ({ id: l.id, name: l.name, ...(typeof l.tts === "string" ? { tts: l.tts } : {}) })), kids, cfgs, cfg: S.settings.cfg || null, stats: !!withStats, words, board: Object.fromEntries(activeKids().map(k => [k.id, boardStats(k.id)])), hjDate: schoolDates().hj ? String(schoolDates().hj.m).padStart(2, "0") + "-" + String(schoolDates().hj.d).padStart(2, "0") : "02-01", jeDate: String(schoolDates().je.m).padStart(2, "0") + "-" + String(schoolDates().je.d).padStart(2, "0"), chapPass: chapPass(), chapSecs: chapSecs(), chap: withStats ? Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])) : {}, asg: Object.values(S.asgs).filter(a => ids.includes(a.kid)), pts: withStats ? Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)])) : {} };
 }
 const randPw = () => { const al = "abcdefghjkmnpqrstuvwxyz23456789", r = crypto.getRandomValues(new Uint32Array(10)); const t = Array.from(r, x => al[x % al.length]).join(""); return t.slice(0, 5) + "-" + t.slice(5); };
 async function packageDialog() {
@@ -1159,7 +1176,7 @@ function buildFeedback() {
   const asg = Object.values(S.asgs).filter(a => ids.includes(a.kid)).map(a => ({ id: a.id, kid: a.kid, prog: a.prog || {}, doneAt: a.doneAt || null }));
   const pts = Object.fromEntries(ids.filter(id => S.pts[id]).map(id => [id, normPts(S.pts[id], id)]));
   const exams = S.examLog.filter(l => ids.includes(l.kid)).slice(0, 10);
-  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log, asg, pts, exams, chap: Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])), profs: Object.fromEntries(ids.filter(id => profOn(kidObj(id))).map(id => [id, kidObj(id).prof])), flags: flagsOut() };
+  return { kind: FB_KIND, v: 1, created: new Date().toISOString(), kids, stats, log, asg, pts, exams, chap: Object.fromEntries(ids.filter(id => S.chap[id]).map(id => [id, normChap(S.chap[id], id)])), profs: Object.fromEntries(ids.filter(id => profOn(kidObj(id))).map(id => [id, kidObj(id).prof])), flags: flagsOut(), ody: odyOut(ids) };
 }
 async function saveFeedback() {
   const fb = buildFeedback(), names = fb.kids.map(k => k.name).join("_").replace(/[^\wäöüÄÖÜß-]+/g, "_").slice(0, 40);
@@ -1210,7 +1227,7 @@ async function applyFeedback(fb) {
   for (const e of fb.log.slice(0, 200)) {
     if (!e || !known.has(e.kid) || !langIds.has(e.lang) || !Number.isFinite(Number(e.ts))) continue;
     const doc = { ts: Number(e.ts), kid: e.kid, kidName: kidName(e.kid), lang: e.lang, langName: str(e.langName, 60), dir: cleanDir(e.dir), from: num(e.from), to: num(e.to), n: num(e.n), ok: num(e.ok), bad: num(e.bad), rep: num(e.rep),
-      flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 200), b: str(e.flt.b, 60) } : null, sel: e.sel === "tags" ? "tags" : "range",
+      flt: e.flt && typeof e.flt === "object" ? { s: str(e.flt.s, 40), k: str(e.flt.k, 40), l: str(e.flt.l, 200), b: str(e.flt.b, 60) } : null, sel: e.sel === "tags" ? "tags" : "range", ...(e.mode === "diktat" ? { mode: "diktat", tid: str(e.tid, 40), book: str(e.book, 60) } : {}),
       items: (Array.isArray(e.items) ? e.items : []).slice(0, 80).map(a => [str(a[0], 200), str(a[1], 200), str(a[2], 200), a[3] ? 1 : 0, num(a[4])]) };
     const id = "log/r" + doc.ts + "_" + doc.kid;
     if (S.log.some(x => x.kid === doc.kid && x.ts === doc.ts)) continue;
@@ -1220,6 +1237,7 @@ async function applyFeedback(fb) {
   for (const k of kids) {
     if (fb.pts && typeof fb.pts === "object" && fb.pts[k.id]) { const m = mergePts(S.pts[k.id], fb.pts[k.id], k.id); await wset("pts/" + k.id, m); S.pts[k.id] = m; nPts++; }
     if (fb.chap && typeof fb.chap === "object" && fb.chap[k.id]) { const m = mergeChap(S.chap[k.id], fb.chap[k.id], k.id); await wset("chap/" + k.id, m); S.chap[k.id] = m; }
+    if (fb.ody && typeof fb.ody === "object" && fb.ody[k.id]) { const m = odyMerge(S.ody[k.id], fb.ody[k.id]); await wset("ody/" + k.id, m); S.ody[k.id] = m; }
   }
   for (const x of (Array.isArray(fb.asg) ? fb.asg : []).slice(0, 300)) {
     const cur = x && S.asgs[x.id]; if (!cur || !known.has(cur.kid) || x.kid !== cur.kid) continue;
@@ -1326,6 +1344,7 @@ function lernenTab() {
   return f;
 }
 function lernenView() {
+  if (dkShown()) return dkView();
   const t = S.tasks[S.kid], wrap = h("div", { class: "lern" });
   if (!S.kid) { wrap.append(h("div", { class: "span banner warn" }, "Keine aktive Person. Der Administrator aktiviert sie im Bereich „Admin“.")); return wrap; }
   if (!t) {
@@ -1341,7 +1360,7 @@ function lernenView() {
   wrap.append(h("div", { class: "span meta" },
     h("span", { class: "chip" }, "Mappe: ", h("b", null, t.langName)),
     h("span", { class: "chip" }, h("b", null, dirLabel(t.dir))),
-    selMode(t) === "tags" ? h("span", { class: "chip" }, h("b", null, fltLabel(t.flt) || "alle Vokabeln")) : h("span", { class: "chip" }, "Vokabeln ", h("b", null, t.from + " bis " + t.to)),
+    t.ody ? h("span", { class: "chip" }, "Wort-Odyssee: ", h("b", null, odyIsle(t.ody.i))) : selMode(t) === "tags" ? h("span", { class: "chip" }, h("b", null, fltLabel(t.flt) || "alle Vokabeln")) : h("span", { class: "chip" }, "Vokabeln ", h("b", null, t.from + " bis " + t.to)),
     t.rep ? h("span", { class: "chip" }, h("b", null, "Wiederholung")) : null,
     t.tips ? h("span", { class: "chip" }, h("b", null, "Tipps erlaubt")) : null));
   if (!open) {
@@ -1467,6 +1486,7 @@ function actionBar() {
   let kids;
   if (open) kids = [h("div", { class: "row", style: "flex:1;flex-wrap:nowrap" }, h("span", { id: "proglabel", class: "muted", style: "white-space:nowrap" }, n + " von " + tot), h("div", { class: "bar" }, h("i", { id: "prog", style: "width:" + (100 * n / tot) + "%" }))),
     h("button", { class: "btn", disabled: S.busy || !S.canWrite, onclick: exam ? submitExam : submitTask }, exam ? "Prüfung abgeben" : "Abgeben & prüfen")];
+  else if (t.ody) kids = [h("span", { class: "muted", style: "flex:1" }, exam ? (t.passed ? "Tor bezwungen" : "Tor noch verschlossen") : "Inselaufgabe abgegeben"), h("button", { class: "btn", onclick: () => { if (exam) S.mode = "lernen"; odyToMap(t.ody.lang); } }, "Zur Seekarte")];
   else if (exam) kids = [h("span", { class: "muted" }, t.passed ? "Prüfung bestanden" : "Prüfung nicht bestanden"),
     h("button", { class: "btn sec", onclick: () => { S.mode = "lernen"; renderAll(); window.scrollTo(0, 0); } }, "Zurück zum Lernen")];
   else kids = [h("button", { class: "btn grow", disabled: S.busy || !S.canWrite, onclick: () => continueTask("new") }, S.busy ? "Einen Moment …" : "Neue Vokabeln"),
@@ -1981,9 +2001,9 @@ function protokollView() {
   if (!logs.length) { w.append(h("div", { class: "empty" }, "Noch keine abgegebene Lerneinheit.")); return w; }
   const rows = logs.map(l => { const pct = Math.round(100 * l.ok / Math.max(1, l.n)); return h("tr", null,
     h("td", null, fmtShort(l.ts)), multiKids() ? h("td", null, l.kidName || kidName(l.kid || firstKid())) : null,
-    h("td", { class: "m" }, l.langName + (l.mode === "pruefung" ? " (Prüfung)" : l.rep ? " (Wdh.)" : ""), h("div", { class: "muted" }, l.mode === "pruefung" || selMode(l) === "tags" ? (fltLabel(l.flt) || "–") : l.from + "–" + l.to)),
+    h("td", { class: "m" }, l.langName + (l.mode === "diktat" ? " (Diktat" + (l.rep ? ", Wdh.)" : ")") : l.mode === "pruefung" ? " (Prüfung)" : l.rep ? " (Wdh.)" : ""), h("div", { class: "muted" }, l.mode === "diktat" ? dkBookName(l.book) + " · " + (l.n - l.ok) + " Fehler" : l.mode === "pruefung" || selMode(l) === "tags" ? (fltLabel(l.flt) || "–") : l.from + "–" + l.to)),
     h("td", { class: "s" }, l.ok + " / " + l.n), h("td", null, l.mode === "pruefung" ? h("div", { class: "stack", style: "gap:4px;align-items:flex-start" }, h("span", { class: "pill " + (l.passed ? "ok" : "bad") }, l.passed ? "bestanden" : "durchgefallen"), notePill(examGrade(l))) : h("span", { class: "pill " + (pct >= 80 ? "ok" : pct >= 50 ? "mid" : "bad") }, pct + " %")),
-    h("td", null, l.items ? h("button", { class: "btn small sec", onclick: () => exportLogPdf(l), "aria-label": "PDF dieser Übung speichern" }, "PDF") : h("span", { class: "muted", title: "Für ältere Übungen wurden keine Einzelergebnisse gespeichert." }, "–"))); });
+    h("td", null, l.items && l.mode !== "diktat" ? h("button", { class: "btn small sec", onclick: () => exportLogPdf(l), "aria-label": "PDF dieser Übung speichern" }, "PDF") : h("span", { class: "muted", title: "Für ältere Übungen wurden keine Einzelergebnisse gespeichert." }, "–"))); });
   const heads = ["Datum", multiKids() ? "Name" : null, "Mappe", "Richtig", "Quote", "PDF"].filter(Boolean);
   w.append(h("div", { class: "card scroll" }, h("table", { class: "v proto" }, h("thead", null, h("tr", null, heads.map(x => h("th", null, x)))), h("tbody", null, rows))));
   return w;
@@ -2202,7 +2222,8 @@ async function finalizeExam(kid) {
     if (pct + 1e-9 >= PT.min) { pts = isHear(t.dir) ? PTH.exam : PT.exam; await awardPoints(kid, "e" + t.created, 3, pts, ptLabel(t), taskMeta(t)); }
     if (t.items.length && t.ok === t.items.length) await awardPoints(kid, "p" + t.created, 4, 0, ptLabel(t), taskMeta(t));
     if (t.chap && t.passed) await recordChapPass(kid, t.chap, t.submitted);
-    if (t.asg) await creditAsg(t.asg, "e" + t.created, pct); }
+    if (t.asg) await creditAsg(t.asg, "e" + t.created, pct);
+    if (t.ody) await odyRecord(kid, t.ody, pct); }
   await wupdate("exam/" + kid, { logged: true, pts });
   S.exams[kid] = { ...t, logged: true, pts };
 }
@@ -2388,6 +2409,12 @@ async function mergeFromPackage(pkg, ids) {
   for (const a of inc) { const cur = S.asgs[a.id], m = cur ? mergeAsg(cur, a) : (asgComplete(a) && !a.doneAt ? { ...a, doneAt: Date.now() } : a); await wset("asg/" + m.id, m); S.asgs[m.id] = m; }
   if (pkg.pts && typeof pkg.pts === "object") for (const id of ids) if (pkg.pts[id]) { const m = mergePts(S.pts[id], pkg.pts[id], id); await wset("pts/" + id, m); S.pts[id] = m; }
   if (pkg.chap && typeof pkg.chap === "object") for (const id of ids) if (pkg.chap[id]) { const m = mergeChap(S.chap[id], pkg.chap[id], id); await wset("chap/" + id, m); S.chap[id] = m; }
+  if (Array.isArray(pkg.dk)) {                                    /* Diktat-Texte: die Sammlung aus der Hauptapp gilt */
+    const inc = pkg.dk.slice(0, 300).map(dkClean).filter(Boolean), keep = new Set(inc.map(x => x.id));
+    if (LOCAL) for (const x of Object.values(S.dkTexts)) if (!keep.has(x.id)) { await wdelete("dktext/" + x.id); delete S.dkTexts[x.id]; }
+    for (const x of inc) if (!S.dkTexts[x.id] || S.dkTexts[x.id].text !== x.text) { await wset("dktext/" + x.id, x); S.dkTexts[x.id] = x; }
+  }
+  if (pkg.ody && typeof pkg.ody === "object") for (const id of ids) if (pkg.ody[id]) { const m = odyMerge(S.ody[id], pkg.ody[id]); await wset("ody/" + id, m); S.ody[id] = m; }
 }
 async function creditAsg(ref, runId, pct) {
   const a = S.asgs[ref.id]; if (!a) return;
@@ -2823,7 +2850,7 @@ function celebNext() {
   celebRun = true;
   if (c.kind === "video") { playArchery(() => celebNext()); return; }
   const pool = CELEB_JOKES[c.kind] || [], joke = pool.length ? pool[Math.floor(Math.random() * pool.length)] : "";
-  const head = { level: "Level-Up!", chap: "Kapitel gemeistert!", exam: "Bestanden!", asg: "Herausforderung geschafft!" }[c.kind] || "Geschafft!";
+  const head = { level: "Level-Up!", chap: "Kapitel gemeistert!", exam: "Bestanden!", asg: "Herausforderung geschafft!", ody: "Land in Sicht!", odykey: "Schlüssel gefunden!", odygate: "Das Tor öffnet sich!" }[c.kind] || "Geschafft!";
   const cols = ["#ffd84d", "#2447b2", "#14804f", "#bf3329", "#7a3cc4", "#e8793a"], ov = h("div", { class: "celeb", role: "status", "aria-live": "polite" });
   for (let i = 0; i < 40; i++) {
     const p = h("i", { "aria-hidden": "true" });
@@ -3484,9 +3511,42 @@ function mergeProfContent(a, b) {
 }
 
 /* ------------------------------------------------------------------ Versionsnummer und „Was ist neu?“ (erscheint einmal je Person und Version) */
-const APP_VERSION = "0.1";
+const APP_VERSION = "0.3";
 /* Neueste Version zuerst. Bei jeder Änderung einen neuen Eintrag oben einfügen und APP_VERSION erhöhen. */
 const CHANGELOG = [
+  { v: "0.3", date: "21.10.2026",
+    bugfix: [],
+    comfort: [
+      "Ein Diktat bringt jetzt 30 Punkte ab 90 %",
+      "Nach einer Insel geht es direkt zurück zur Seekarte"
+    ],
+    neu: [
+      "Die Wort-Odyssee: Reise zur Bibliothek von Alexandria",
+      "Seekarte je Sprache mit 10 Inseln und einem Tor pro Halle",
+      "Inseln mit Vokabeln, Hörverständnis und Diktat",
+      "Stürme des Vergessens mit deinen wackligsten Vokabeln",
+      "Kartenstücke, Schlüssel und Torprüfung für die nächste Halle",
+      "Odyssee-Punkte: Insel 5, Schlüssel 10, Tor 25",
+      "Der Fortschritt reist mit Lern-Paket und Lernstand-Datei"
+    ],
+    soon: [] },
+  { v: "0.2", date: "21.10.2026",
+    bugfix: [],
+    comfort: [
+      "Diktat: Abschnitte einzeln, nochmal oder als ganzen Text anhören",
+      "Diktat: Vorlesen langsam oder normal",
+      "Diktat: Auswertung Wort für Wort mit Markierungen"
+    ],
+    neu: [
+      "Diktat: Text wird vorgelesen, du schreibst mit",
+      "Diktat: Wörterbuch wählen, der Text nutzt dessen Vokabeln",
+      "Diktat: drei Längen (ca. 40, 70 oder 110 Wörter)",
+      "Diktat-Sammlung: erstellte Texte kommen mit dem Lern-Paket in die Lern-Version",
+      "3 Punkte für ein Diktat ab 90 %"
+    ],
+    soon: [
+      "Die Wort-Odyssee: Reise zur Bibliothek von Alexandria"
+    ] },
   { v: "0.1", date: "19.10.2026",
     bugfix: [
       "Tipp zeigt die ganze Lösung (z. B. „und; auch“)",
@@ -3629,19 +3689,403 @@ function pickDir(kid) {
   return k === "hoer" ? (isHear(d) ? d : "h2d") : (isHear(d) ? "f2d" : d);
 }
 function kindTiles(kid) {
-  const cur = S.hkind[kid] || "vok", defs = [["vok", "Vokabeln", "lesen und übersetzen"], ["hoer", "Hör\u00ADverständnis", "hören und antworten"], ["diktat", "Diktat", "bald verfügbar"]];
-  return h("div", { class: "kinds", role: "group", "aria-label": "Lernart" }, defs.map(([k, t, sub]) => h("button", { type: "button", class: "kind" + (cur === k ? " on" : ""), "aria-pressed": cur === k ? "true" : "false", disabled: k === "diktat",
-    onclick: () => { S.hkind[kid] = k; S.hdir[kid] = pickDir(kid); renderAll(); } }, h("b", null, t), h("span", { class: "muted" }, sub), k === "diktat" ? h("span", { class: "pill mid" }, "Coming soon") : null)));
+  const cur = S.hkind[kid] || "vok", defs = [["vok", "Vokabeln", "lesen und übersetzen"], ["hoer", "Hör\u00ADverständnis", "hören und antworten"], ["diktat", "Diktat", "hören und schreiben"]];
+  return h("div", { class: "kinds", role: "group", "aria-label": "Lernart" }, defs.map(([k, t, sub]) => h("button", { type: "button", class: "kind" + (cur === k ? " on" : ""), "aria-pressed": cur === k ? "true" : "false", 
+    onclick: () => { S.hkind[kid] = k; S.hdir[kid] = pickDir(kid); renderAll(); } }, h("b", null, t), h("span", { class: "muted" }, sub))));
 }
-/* ---- Die Wort-Odyssee (Vorschau) ---- */
+/* ---- Diktat: Text aus einem Wörterbuch der Person wird vorgelesen und abgetippt ---- */
+const DK_LEN = [[40, "Kurz", "ca. 40 Wörter"], [70, "Mittel", "ca. 70 Wörter"], [110, "Lang", "ca. 110 Wörter"]];
+const PTD = { own: 30 };                                          /* Punkte für ein Diktat ab 90 % (eigene Übung) */
+const DK_RATES = [[0.65, "Langsam"], [0.85, "Normal"]];
+const DK_THEMES = ["Schule", "Familie", "Ferien", "Freunde", "Einkaufen", "Sport", "Tiere", "Wetter", "in der Stadt", "Essen und Trinken", "ein Ausflug", "ein Geburtstag", "Hobbys", "ein Tag am Meer", "Zuhause", "eine kleine Reise"];
+const DK_NONE = "#";
+S.dk = {}; S.dkTexts = {}; S.dkBook = {}; S.dkLen = {}; S.dkGen = false;
+const dkSig = () => JSON.stringify([Object.values(S.dk).map(d => [d.kid, d.created, d.state, d.ok, d.pts]), Object.keys(S.dkTexts).length, S.dkGen]);
+const dkShown = () => S.mode !== "pruefung" && !!S.kid && S.hkind[S.kid] === "diktat";
+const dkBookName = b => b || "Ohne Wörterbuch";
+const dkWords = (lang, kid, b) => visWords(lang, kid).filter(w => (tg(w)[3] || "") === b);
+function dkBooks(lang, kid) { const m = new Map(); visWords(lang, kid).forEach(w => { const b = tg(w)[3] || ""; m.set(b, (m.get(b) || 0) + 1); }); return [...m.entries()].sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1) || natCmp(a[0], b[0])); }
+const dkLib = (lang, b) => Object.values(S.dkTexts).filter(x => x.lang === lang && (x.book || "") === b).sort((a, c) => c.ts - a.ts);
+const dkDone = kid => new Set(S.log.filter(l => l.mode === "diktat" && l.kid === kid && l.tid).map(l => l.tid));
+const dkShuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function dkClean(x) {
+  if (!x || typeof x !== "object") return null; const s = (v, n) => String(v == null ? "" : v).slice(0, n);
+  const id = s(x.id, 40), text = s(x.text, 2500).replace(/\s+/g, " ").trim();
+  if (!/^[\w-]{1,40}$/.test(id) || !text) return null;
+  return { id, lang: s(x.lang, 40), book: s(x.book, 60), len: Math.round(Number(x.len)) || 70, title: s(x.title, 80), text, ts: Number(x.ts) || Date.now() };
+}
+function dkForPkg(ids) {
+  return Object.values(S.dkTexts).filter(x => ids.some(id => { const k = kidObj(id); return !profOn(k) || wordOkPkg(id, x.lang, { t: ["", "", "", x.book || ""] }); })).slice(0, 300).map(dkClean).filter(Boolean);
+}
+/* Text in Sätze und kurze Abschnitte zum Vorlesen teilen */
+function dkSentences(text) { return (String(text || "").replace(/\s+/g, " ").trim().match(/[^.!?…]+[.!?…]+["'“”»«’)]*|[^.!?…]+$/g) || []).map(s => s.trim()).filter(Boolean); }
+function dkChunks(text) {
+  const out = [];
+  dkSentences(text).forEach(sen => {
+    const parts = sen.replace(/([,;:–])\s+/g, "$1\u0001").split("\u0001").map(p => p.trim()).filter(Boolean), merged = [];
+    parts.forEach(p => { const last = merged[merged.length - 1]; if (last && (last.split(" ").length <= 2 || p.split(" ").length <= 2) && (last + " " + p).split(" ").length <= 7) merged[merged.length - 1] = last + " " + p; else merged.push(p); });
+    merged.forEach(p => { const ws = p.split(" "); if (ws.length <= 7) { out.push(p); return; } const n = Math.ceil(ws.length / 6), size = Math.ceil(ws.length / n); for (let i = 0; i < ws.length; i += size) out.push(ws.slice(i, i + size).join(" ")); });
+  });
+  return out;
+}
+function dkSpeak(list, lang, rate) {
+  if (!ttsSupported()) { toast("Die Sprachausgabe gibt es auf diesem Gerät oder in dieser Ansicht nicht."); return false; }
+  if (!canSpeak(lang)) { toast("Für diese Sprache gibt es keine Sprachausgabe."); return false; }
+  const code = ttsOf(lang), v = pickVoice(code);
+  try {
+    window.speechSynthesis.cancel();
+    list.filter(Boolean).forEach(t => { const u = new window.SpeechSynthesisUtterance(t); u.lang = code; u.rate = rate || 0.85; if (v) u.voice = v; window.speechSynthesis.speak(u); });
+  } catch (e) { toast("Das Vorlesen hat nicht geklappt."); return false; }
+  return true;
+}
+const dkStop = () => { try { if (ttsSupported()) window.speechSynthesis.cancel(); } catch (e) {} };
+/* Vergleich Wort für Wort: Groß- und Kleinschreibung zählt, Satzzeichen nur als Hinweis */
+const dkTokens = s => String(s || "").normalize("NFC").replace(/[’ʼ`´]/g, "'").replace(/[„“”«»]/g, "\"").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+const dkCore = t => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+function dkLev(a, b) {
+  if (a === b) return 0; const m = a.length, n = b.length; if (!m || !n) return m + n;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+  return prev[n];
+}
+function dkCompare(sol, ans) {
+  const S1 = dkTokens(sol).filter(dkCore), A = dkTokens(ans).filter(dkCore), n = S1.length, m = A.length, cs = S1.map(dkCore), ca = A.map(dkCore);
+  const sub = (i, j) => cs[i] === ca[j] ? 0 : (cs[i].toLocaleLowerCase() === ca[j].toLocaleLowerCase() || dkLev(cs[i], ca[j]) <= Math.max(1, Math.floor(cs[i].length / 3))) ? 1 : 1.6;
+  const D = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let i = 0; i <= n; i++) D[i][0] = i; for (let j = 0; j <= m; j++) D[0][j] = j;
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + sub(i - 1, j - 1));
+  const ops = []; let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && Math.abs(D[i][j] - (D[i - 1][j - 1] + sub(i - 1, j - 1))) < 1e-9) {
+      const s = S1[i - 1], a = A[j - 1];
+      ops.push(cs[i - 1] === ca[j - 1] ? (s === a ? { k: "ok", s } : { k: "pun", s, a }) : { k: "bad", s, a }); i--; j--;
+    } else if (i > 0 && Math.abs(D[i][j] - (D[i - 1][j] + 1)) < 1e-9) { ops.push({ k: "miss", s: S1[i - 1] }); i--; }
+    else { ops.push({ k: "extra", a: A[j - 1] }); j--; }
+  }
+  ops.reverse();
+  return { ops, n, err: ops.filter(o => o.k === "bad" || o.k === "miss" || o.k === "extra").length };
+}
+function dkLevel(kid, lang) {
+  const k = kidObj(kid), p = profOn(k) ? k.prof : null;
+  if (!p) return "Anfänger bis leicht Fortgeschrittene, eher einfache Sprache";
+  if (p.mode === "frei") return "erwachsene Person, freies Lernen, einfache bis mittlere Sprache";
+  const pl = (p.langs || []).find(x => x.id === lang), yrs = pl && p.k && pl.from ? Math.max(1, p.k - pl.from + 1) : 0;
+  return "Schüler/in in Klasse " + p.k + (yrs ? ", " + yrs + ". Lernjahr in dieser Sprache" : "") + ". Satzbau und Grammatik nicht schwerer als in diesem Lernjahr üblich";
+}
+async function dkGenerate(kid, lang, book, len) {
+  const l = (S.settings.langs || []).find(x => x.id === lang) || {}, ws = dkShuffle(dkWords(lang, kid, book)).slice(0, 70);
+  const voc = ws.map(w => speakText(w.f) + " = " + String(w.d || "").replace(/\s+/g, " ").slice(0, 60)).filter(x => x.length > 4).join("\n");
+  const theme = DK_THEMES[Math.floor(Math.random() * DK_THEMES.length)], need = Math.min(ws.length, Math.max(6, Math.round(len / 6)));
+  const prompt = ["Schreibe einen Diktattext für eine Person, die " + (l.name || "eine Fremdsprache") + " lernt.",
+    "Sprache des Textes: " + (l.name || "Fremdsprache") + " (Sprachcode " + (ttsOf(lang) || "unbekannt") + "). Niveau: " + dkLevel(kid, lang) + ".",
+    "Länge: etwa " + len + " Wörter (zwischen " + (len - 8) + " und " + (len + 8) + ").",
+    ws.length ? "Verwende möglichst viele Vokabeln aus der Liste unten, mindestens " + need + " verschiedene, gebeugt oder konjugiert wie nötig. Ergänze nur einfache Grundwörter." : "Verwende einfache Grundwörter.",
+    "Ein zusammenhängender, natürlicher, altersgerechter Text in ganzen Sätzen, mit korrekter Rechtschreibung und Zeichensetzung. Kurze bis mittellange Sätze.",
+    "Keine Überschrift im Text, keine Lautschrift, keine Übersetzung, keine Aufzählungen, keine wörtliche Rede, keine Zahlen in Ziffern, keine Abkürzungen.",
+    "Thema-Anregung: " + theme + " (nur nutzen, wenn es zu den Vokabeln passt, sonst ein passendes eigenes Thema).",
+    "Antworte nur mit JSON in dieser Form: {\"titel\": \"kurzer Titel auf Deutsch\", \"text\": \"der Diktattext\"}",
+    ws.length ? "Vokabeln (Fremdsprache = Deutsch):\n" + voc : ""].filter(Boolean).join("\n");
+  const r = await S.sample.json(prompt, { modelTier: "default" });
+  const text = String((r && r.text) || "").replace(/\s+/g, " ").trim();
+  if (!text || dkTokens(text).length < len * 0.5) throw new Error("Der Text ist zu kurz geraten. Bitte nochmal versuchen.");
+  return { title: String((r && (r.titel || r.title)) || "").slice(0, 80), text: text.slice(0, 2500) };
+}
+async function dkStart(kid, lang, book, len, how, repOf, ody) {
+  if (S.busy) return;
+  const cur = S.dk[kid];
+  if (cur && cur.state === "OFFEN" && String(cur.a || "").trim() && !(await confirmBox("Laufendes Diktat ersetzen?", "Dein bisher geschriebener Text geht verloren.", "Neues Diktat starten", true))) return;
+  const l = (S.settings.langs || []).find(x => x.id === lang) || {};
+  S.busy = true; if (how === "neu") S.dkGen = true; renderAll();
+  try {
+    let src = null;
+    if (repOf) src = { id: repOf.tid, title: repOf.title, text: repOf.text, len: repOf.len };
+    else if (how === "neu") {
+      const g = await dkGenerate(kid, lang, book, len);
+      src = { id: uid(), lang, book, len, title: g.title, text: g.text, ts: Date.now() };
+      try { await wset("dktext/" + src.id, src); S.dkTexts[src.id] = src; } catch (e) {}
+    } else {
+      const all = dkLib(lang, book), fit = all.filter(x => x.len === len), lib = fit.length ? fit : all, done = dkDone(kid), fresh = lib.filter(x => !done.has(x.id)), pool = fresh.length ? fresh : lib;
+      src = pool[Math.floor(Math.random() * pool.length)] || null;
+    }
+    if (!src) toast("Für dieses Wörterbuch gibt es noch keinen Diktat-Text.");
+    else {
+      const d = { kid, created: Date.now(), tid: src.id, lang, langName: l.name || "", book, len: src.len || len, title: src.title || "", text: src.text, n: dkTokens(src.text).filter(dkCore).length, a: "", state: "OFFEN", rate: (cur && cur.rate) || 0.85, rep: repOf ? 1 : 0, ...(ody ? { ody } : {}) };
+      await wset("dkrun/" + kid, d); S.dk[kid] = d; S.dkPos = -1;
+      S.hkind[kid] = "diktat"; S.mode = "lernen"; S.tab = "lernen"; toast("Hör gut zu und schreib mit!");
+    }
+  } catch (e) {
+    const c = e && e.code;
+    toast(c === "rate_limited" ? "Gerade sind es zu viele Anfragen. Bitte gleich nochmal versuchen." : c === "not_granted" ? "Die Text-Erstellung wurde nicht erlaubt." : "Der Text konnte nicht erstellt werden." + (e && e.message ? " " + e.message : ""));
+  }
+  S.busy = false; S.dkGen = false; renderAll(); window.scrollTo(0, 0);
+}
+let dkTimer = null;
+function dkSaveSoon(kid) { clearTimeout(dkTimer); dkTimer = setTimeout(() => dkFlush(kid), 1200); }
+async function dkFlush(kid) { clearTimeout(dkTimer); const d = S.dk[kid]; if (!d || d.state !== "OFFEN" || !S.canWrite) return; try { await wupdate("dkrun/" + kid, { a: d.a || "", rate: d.rate || 0.85 }); } catch (e) {} }
+async function dkSubmit() {
+  const kid = S.kid, d = S.dk[kid]; if (S.busy || !d || d.state !== "OFFEN") return;
+  if (!(await confirmBox("Diktat abgeben?", (String(d.a || "").trim() ? "" : "Du hast noch nichts geschrieben. ") + "Danach kann nichts mehr geändert werden.", "Abgeben & prüfen"))) return;
+  dkStop(); S.busy = true; renderAll();
+  try {
+    const r = dkCompare(d.text, d.a), n = r.n, ok = Math.max(0, n - r.err), pct = 100 * ok / Math.max(1, n);
+    const t = { ...d, state: "ABGEGEBEN", submitted: Date.now(), ops: r.ops, err: r.err, ok, n, pts: 0 };
+    await wset("dkrun/" + kid, t); S.dk[kid] = t;
+    await wset("log/d" + t.created + "_" + kid, { ts: t.submitted, kid, kidName: kidName(kid), lang: t.lang, langName: t.langName, mode: "diktat", tid: t.tid, book: t.book, dir: "f2d", from: 0, to: 0, n, ok, bad: n - ok, rep: t.rep || 0, flt: null, sel: "range", items: [] });
+    if (!t.rep && pct + 1e-9 >= PT.min) { const pts = PTD.own; if (await awardPoints(kid, "d" + t.created, 1, pts, "Diktat · " + t.langName, { lang: t.lang, kl: "" })) { await wupdate("dkrun/" + kid, { pts }); S.dk[kid] = { ...t, pts }; } }
+    if (t.ody && !t.rep) await odyRecord(kid, t.ody, pct);
+    toast(r.err ? "Ergebnis: " + r.err + " Fehler." : "Fehlerfrei! Super!");
+  } catch (e) { toastErr(e, "Das Diktat konnte nicht vollständig gespeichert werden."); }
+  S.busy = false; renderAll(); window.scrollTo(0, 0);
+}
+/* Startseite: Wörterbuch wählen, Länge wählen, Diktat starten */
+function dkPanel(kid, lang) {
+  const w = h("div", { class: "stack" }), books = dkBooks(lang.id, kid), key = kid + "|" + lang.id;
+  if (!ttsSupported()) w.append(h("div", { class: "banner warn" }, "Die Sprachausgabe gibt es in dieser Ansicht oder auf diesem Gerät nicht. Bitte die Lern-Version im Browser nutzen."));
+  else if (!canSpeak(lang.id)) w.append(h("div", { class: "banner warn" }, "Für " + lang.name + " gibt es keine Sprachausgabe. Bitte eine andere Sprache wählen."));
+  else if (voiceMissing(lang.id)) w.append(h("div", { class: "banner lock" }, "Auf diesem Gerät ist keine passende Stimme für " + lang.name + " installiert. Es klingt vielleicht nicht richtig."));
+  const cur = S.dkBook[key], book = cur != null && books.some(b => b[0] === cur) ? cur : null;
+  const sel = h("select", { "aria-label": "Wörterbuch für das Diktat" }, h("option", { value: DK_NONE }, "Bitte Wörterbuch wählen …"), ...books.map(([b, n]) => h("option", { value: b }, dkBookName(b) + " (" + n + " Vokabeln)")));
+  sel.value = book == null ? DK_NONE : book;
+  sel.addEventListener("change", () => { S.dkBook[key] = sel.value === DK_NONE ? null : sel.value; renderAll(); });
+  const len = S.dkLen[kid] || 70;
+  w.append(h("div", { class: "card stack" },
+    h("p", { class: "muted", style: "margin:0" }, "Der Text wird in kurzen Abschnitten vorgelesen, du schreibst mit. Am Ende wird Wort für Wort verglichen: Groß- und Kleinschreibung zählt, Satzzeichen werden nur gelb markiert."),
+    h("div", null, h("label", { class: "f" }, "Aus welchem Wörterbuch?"), sel),
+    h("div", null, h("label", { class: "f" }, "Länge"), h("div", { class: "seg", role: "group", "aria-label": "Länge", style: "margin:0" },
+      DK_LEN.map(([v, l, sub]) => h("button", { type: "button", "aria-pressed": len === v ? "true" : "false", onclick: () => { S.dkLen[kid] = v; renderAll(); } }, l, h("span", { class: "muted", style: "display:block;font-size:11px;font-weight:500" }, sub)))))));
+  if (book == null) return w;
+  const nW = dkWords(lang.id, kid, book).length, lib = dkLib(lang.id, book), canGen = !LOCAL && !!S.sample, speakOk = canSpeak(lang.id);
+  if (canGen && nW < 10) w.append(h("div", { class: "banner lock" }, "In „" + dkBookName(book) + "“ sind nur " + nW + " Vokabeln freigegeben. Der Text besteht dann vor allem aus Grundwörtern."));
+  if (!canGen && !lib.length) w.append(h("div", { class: "banner lock" }, LOCAL ? "Für dieses Wörterbuch sind noch keine Diktate im Lern-Paket. Der Administrator erstellt welche und schickt dir ein neues Paket." : "Neue Diktat-Texte schreibt Claude. Das ist in dieser Ansicht gerade nicht verfügbar."));
+  if (canGen) w.append(h("button", { class: "btn", disabled: S.busy || !S.canWrite || !speakOk, onclick: () => dkStart(kid, lang.id, book, len, "neu") }, S.dkGen ? "Der Text wird geschrieben …" : "Neues Diktat erstellen"));
+  if (lib.length) w.append(h("button", { class: "btn " + (canGen ? "sec" : ""), disabled: S.busy || !S.canWrite || !speakOk, onclick: () => dkStart(kid, lang.id, book, len, "sammlung") }, "Diktat aus der Sammlung (" + lib.length + (lib.length === 1 ? " Text)" : " Texte)")));
+  if (S.dkGen) w.append(h("p", { class: "muted", style: "margin:0" }, "Claude schreibt gerade einen Text mit deinen Vokabeln. Das dauert ein paar Sekunden."));
+  return w;
+}
+/* Lernen: Diktat hören, schreiben, abgeben, Ergebnis */
+function dkView() {
+  const kid = S.kid, d = S.dk[kid], wrap = h("div", { class: "lern" });
+  wrap.append(h("div", { class: "span stack" }, h("h3", null, "Wie möchtest du lernen?"), kindTiles(kid)));
+  if (!d) {
+    wrap.append(h("div", { class: "span banner lock" }, "Noch kein Diktat" + (multiKids() ? " für " + kidName(kid) : "") + ". Wähle auf der Startseite ein Wörterbuch und starte dein Diktat."));
+    wrap.append(h("div", { class: "span" }, h("button", { class: "btn", onclick: () => { S.tab = "start"; renderAll(); window.scrollTo(0, 0); } }, "Weiter zur Auswahl")));
+    return wrap;
+  }
+  const open = d.state === "OFFEN";
+  wrap.append(h("div", { class: "span banner " + (open ? "open" : "done") }, open ? "Diktat läuft: Hör zu und schreib mit. Groß- und Kleinschreibung zählt, Satzzeichen werden nur markiert." : "Abgegeben. Unten siehst du, was richtig war und wo Fehler stecken."));
+  wrap.append(h("div", { class: "span meta" }, h("span", { class: "chip" }, h("b", null, "Diktat")), h("span", { class: "chip" }, "Mappe: ", h("b", null, d.langName)), h("span", { class: "chip" }, "Wörterbuch: ", h("b", null, dkBookName(d.book))),
+    h("span", { class: "chip" }, h("b", null, d.n + " Wörter")), d.title ? h("span", { class: "chip" }, "Thema: ", h("b", null, d.title)) : null, d.rep ? h("span", { class: "chip" }, h("b", null, "Wiederholung")) : null, d.ody ? h("span", { class: "chip" }, "Wort-Odyssee: ", h("b", null, odyIsle(d.ody.i))) : null));
+  const chunks = dkChunks(d.text), rate = () => d.rate || 0.85, noBlur = e => e.preventDefault();
+  if (open) {
+    if (S.dkPos == null || S.dkPos >= chunks.length) S.dkPos = -1;
+    const lbl = h("div", { class: "big2", "aria-live": "polite" }), sync = () => { lbl.textContent = S.dkPos < 0 ? "Noch nicht begonnen" : "Abschnitt " + (S.dkPos + 1) + " von " + chunks.length; back.disabled = S.dkPos <= 0; next.textContent = S.dkPos < 0 ? "▶ Los geht’s" : S.dkPos >= chunks.length - 1 ? "Letzter Abschnitt ✓" : "Nächster Abschnitt ▶"; next.disabled = S.dkPos >= chunks.length - 1; again.disabled = S.dkPos < 0; };
+    const say = () => { if (S.dkPos >= 0) dkSpeak([chunks[S.dkPos]], d.lang, rate()); };
+    const back = h("button", { type: "button", class: "btn sec", onmousedown: noBlur, onclick: () => { if (S.dkPos > 0) { S.dkPos--; sync(); say(); } } }, "◀ Zurück");
+    const again = h("button", { type: "button", class: "btn sec", onmousedown: noBlur, onclick: say }, "↺ Nochmal");
+    const next = h("button", { type: "button", class: "btn hearbtn", style: "width:100%", onmousedown: noBlur, onclick: () => { if (S.dkPos < chunks.length - 1) { S.dkPos++; sync(); say(); } } });
+    const whole = h("button", { type: "button", class: "btn small sec", onmousedown: noBlur, onclick: () => dkSpeak(dkSentences(d.text), d.lang, rate()) }, "▶ Ganzen Text anhören");
+    const speed = h("div", { class: "seg", role: "group", "aria-label": "Tempo", style: "margin:0;flex:1" }, DK_RATES.map(([v, l]) => h("button", { type: "button", "aria-pressed": rate() === v ? "true" : "false", onmousedown: noBlur, onclick: e => { d.rate = v; [...speed.children].forEach(b => b.setAttribute("aria-pressed", b === e.currentTarget ? "true" : "false")); dkSaveSoon(kid); } }, l)));
+    sync();
+    wrap.append(h("div", { class: "span card stack" }, h("div", { class: "row", style: "justify-content:space-between" }, lbl, whole), h("div", { class: "row", style: "flex-wrap:nowrap" }, back, again), next, speed,
+      h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Tipp: Hör dir zuerst den ganzen Text an. Dann Abschnitt für Abschnitt mitschreiben und am Ende noch einmal alles anhören.")));
+    const cnt = h("span", { class: "muted" }), upd = () => { const n = dkTokens(ta.value).filter(dkCore).length; cnt.textContent = n + (n === 1 ? " Wort" : " Wörter") + " geschrieben"; };
+    const ta = h("textarea", { class: "dkta", "data-key": "dktxt", rows: 9, placeholder: "Hier schreibst du mit …", autocomplete: "off", autocorrect: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "Dein Diktat", disabled: !S.canWrite });
+    ta.value = d.a || ""; upd();
+    ta.addEventListener("input", () => { d.a = ta.value; upd(); dkSaveSoon(kid); });
+    ta.addEventListener("focus", () => keepVisible(ta));
+    wrap.append(h("div", { class: "span card stack" }, h("div", { class: "row", style: "justify-content:space-between" }, h("b", null, "Dein Text"), cnt), ta));
+    return wrap;
+  }
+  const pct = Math.round(100 * d.ok / Math.max(1, d.n));
+  wrap.append(h("div", { class: "span card" }, h("div", { class: "score" }, h("span", { class: "big" }, d.err + (d.err === 1 ? " Fehler" : " Fehler")), h("span", null, d.ok + " von " + d.n + " Wörtern richtig (" + pct + " %)"), d.pts ? h("span", { class: "pill ok" }, "+" + d.pts + " Punkte") : null),
+    h("p", { class: "muted", style: "margin:10px 0 0" }, "Abgegeben am " + fmtDate(d.submitted) + "." + (d.rep ? " Wiederholungen bringen keine Punkte." : " Ab " + PT.min + " % gibt es " + PTD.own + " Punkte."))));
+  const res = h("div", { class: "dkres" }, (d.ops || []).map(o => o.k === "ok" ? h("span", { class: "dkw" }, o.s)
+    : o.k === "pun" ? h("span", { class: "dkw pun" }, o.s, h("small", null, o.a))
+    : o.k === "bad" ? h("span", { class: "dkw bad" }, o.s, h("small", null, o.a))
+    : o.k === "miss" ? h("span", { class: "dkw miss" }, o.s, h("small", null, "fehlt"))
+    : h("span", { class: "dkw extra" }, o.a, h("small", null, "zu viel"))));
+  wrap.append(h("div", { class: "span card stack" }, h("b", null, "Auswertung"),
+    h("div", { class: "row", style: "gap:6px" }, h("span", { class: "dkw bad", style: "font-size:13px" }, "falsch geschrieben"), h("span", { class: "dkw miss", style: "font-size:13px" }, "fehlt"), h("span", { class: "dkw extra", style: "font-size:13px" }, "zu viel"), h("span", { class: "dkw pun", style: "font-size:13px" }, "nur Satzzeichen")),
+    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Oben steht das richtige Wort, klein darunter das, was du geschrieben hast."), res));
+  wrap.append(h("div", { class: "span card stack" }, h("div", { class: "row", style: "justify-content:space-between" }, h("b", null, "Originaltext"), h("button", { type: "button", class: "btn small sec", onclick: () => dkSpeak(dkSentences(d.text), d.lang, rate()) }, "▶ Anhören")),
+    h("p", { style: "margin:0;line-height:1.6" }, d.text), h("details", null, h("summary", { style: "cursor:pointer;font-weight:600" }, "Dein Text"), h("p", { style: "margin:8px 0 0;line-height:1.6;white-space:pre-wrap" }, d.a || "(leer)"))));
+  return wrap;
+}
+function dkBar() {
+  const d = S.dk[S.kid]; if (!d) return null;
+  const kids = d.state === "OFFEN"
+    ? [h("span", { class: "muted", style: "flex:1" }, "Fertig geschrieben?"), h("button", { class: "btn", disabled: S.busy || !S.canWrite, onmousedown: e => e.preventDefault(), onclick: async () => { await dkFlush(S.kid); dkSubmit(); } }, "Abgeben & prüfen")]
+    : d.ody ? [h("button", { class: "btn grow", onclick: () => odyToMap(d.ody.lang) }, "Zur Seekarte")]
+    : [h("button", { class: "btn grow", disabled: S.busy || !S.canWrite, onclick: () => { S.hkind[S.kid] = "diktat"; S.tab = "start"; renderAll(); window.scrollTo(0, 0); } }, "Neues Diktat"),
+       !d.rep ? h("button", { class: "btn sec grow", disabled: S.busy || !S.canWrite, onclick: () => dkStart(S.kid, d.lang, d.book, d.len, "sammlung", d) }, "Nochmal schreiben") : null];
+  return h("div", { class: "actionbar" }, h("div", { class: "in" }, kids));
+}
+/* ---- Die Wort-Odyssee: Seekarte je Sprache, 10 Inseln und ein Tor pro Halle ---- */
+const ODY = { island: 5, key: 10, gate: 25, need: 90 };
+const ODY_STEPS = ["vok:f2d", "hoer:h2d", "vok:d2f", "dk:40", "storm", "vok:mix", "hoer:h2f", "dk:70", "storm", "vok:d2f", "gate"];
+const ODY_ISLES = ["Kieselbucht", "Echo-Insel", "Muschelriff", "Feder-Atoll", "Sturmklippe", "Laternen-Eiland", "Flüsterfels", "Tintenküste", "Nebelsund", "Möwenhorn"];
+const ODY_HALLS = ["Halle der ersten Worte", "Halle der Stimmen", "Halle der Schreiber", "Halle der Sterne", "Halle der Seekarten", "Halle der Dichter", "Halle des Leuchtturms", "Halle der tausend Sprachen"];
+const ODY_STORY = [
+  "Deine Reise beginnt an der Küste. Ein kleines Boot, ein erstes Stück der alten Karte und ein Wind, der nach Abenteuer riecht.",
+  "Hinter dem ersten Tor flüstern Stimmen aus allen Ecken der Welt. Wer gut zuhört, findet den Kurs.",
+  "Die Schreiber von Alexandria prüfen jede Feder. Hier zählt, was du sauber zu Papier bringst.",
+  "Nachts zeigen die Sterne den Weg. Jede gelernte Vokabel leuchtet ein wenig heller.",
+  "Die großen Seekarten liegen offen vor dir. Doch der Nebel des Vergessens zieht immer wieder auf.",
+  "Die Dichter der Bibliothek spielen mit Worten wie mit Wellen. Halte mit ihnen Schritt.",
+  "Der Leuchtturm von Pharos weist den Weg zu den innersten Hallen.",
+  "Nur wenige kommen so weit. Hinter jedem Tor wartet eine neue Halle voller Worte."];
+S.ody = {};
+const odySig = () => JSON.stringify(S.ody);
+const odyStep = i => ODY_STEPS[i % 11];
+const odyHall = s => ODY_HALLS[s] || ("Halle " + (s + 1));
+const odyIsle = i => i % 11 === 10 ? "Tor der " + odyHall(Math.floor(i / 11)) : ODY_ISLES[i % 11];
+function odyNorm(p) {
+  const o = { l: {} };
+  if (p && p.l && typeof p.l === "object") Object.keys(p.l).slice(0, 20).forEach(k => { const x = p.l[k] || {}; o.l[String(k).slice(0, 40)] = { i: Math.max(0, Math.min(5000, Math.round(+x.i) || 0)), tries: Math.max(0, Math.round(+x.tries) || 0), ts: Number(x.ts) || 0 }; });
+  return o;
+}
+function odyMerge(a, b) { const x = odyNorm(a), y = odyNorm(b), o = { l: { ...x.l } }; Object.keys(y.l).forEach(k => { if (!o.l[k] || y.l[k].i > o.l[k].i) o.l[k] = y.l[k]; }); return o; }
+const odyCur = (kid, lang) => odyNorm(S.ody[kid]).l[lang] || { i: 0, tries: 0, ts: 0 };
+const odyOut = ids => Object.fromEntries(ids.filter(id => S.ody[id]).map(id => [id, odyNorm(S.ody[id])]));
+/* Sturm des Vergessens: die wackligsten Vokabeln (viele Fehler im Verhältnis zu den Abfragen) */
+function odyWeak(kid, lang) {
+  const out = [];
+  (S.vocab[lang] || []).forEach((w, ix) => { if (!String(w.f).trim() || !String(w.d).trim() || !wordOk(kid, lang, w)) return; const c = ctr(w, kid); if (c[2] > 0) out.push({ n: ix + 1, sc: (c[2] + 1) / (c[0] + 2) + Math.random() * 0.05 }); });
+  return out.sort((a, b) => b.sc - a.sc).slice(0, 12).map(x => x.n);
+}
+/* Wörterbuch fürs Diktat: das eigene Lehrbuch/Wörterbuch, sonst das größte freigegebene */
+function odyBook(kid, lang) {
+  const k = kidObj(kid), pl = profOn(k) ? (k.prof.langs || []).find(x => x.id === lang) : null, bs = dkBooks(lang, kid);
+  if (pl && pl.book && bs.some(b => b[0] === pl.book)) return pl.book;
+  return bs.length ? bs.slice().sort((a, b) => b[1] - a[1])[0][0] : null;
+}
+function odyPlan(kid, lang, i) {
+  let st = odyStep(i), note = "";
+  if (st.startsWith("hoer") && !canSpeak(lang)) { st = st === "hoer:h2d" ? "vok:f2d" : "vok:d2f"; note = "Ohne Sprachausgabe wird hier gelesen statt gehört."; }
+  if (st.startsWith("dk")) { const b = odyBook(kid, lang); if (!(canSpeak(lang) && b != null && ((!LOCAL && S.sample) || dkLib(lang, b).length))) { st = "vok:d2f"; note = "Für ein Diktat fehlt hier die Sprachausgabe oder ein Diktat-Text, deshalb gibt es Vokabeln."; } }
+  let weak = null;
+  if (st === "storm") { weak = odyWeak(kid, lang); if (weak.length < 5) st = "calm"; }
+  const [kind, arg] = st.split(":");
+  const desc = { vok: arg === "f2d" ? "12 Vokabeln: Fremdsprache → Deutsch" : arg === "d2f" ? "12 Vokabeln: Deutsch → Fremdsprache" : "12 Vokabeln in beide Richtungen",
+    hoer: arg === "h2d" ? "10 Wörter hören und übersetzen" : "10 Wörter hören und aufschreiben", dk: "Diktat mit etwa " + arg + " Wörtern",
+    storm: "Sturm des Vergessens: deine " + (weak ? weak.length : 0) + " wackligsten Vokabeln", calm: "Ruhige See: Kein Sturm in Sicht, dafür 12 gemischte Vokabeln",
+    gate: "Torprüfung: 20 Vokabeln Deutsch → Fremdsprache, Wort für Wort mit Countdown" }[kind];
+  return { kind, arg, weak, note, desc };
+}
+function odyRunning(kid, lang, i) {
+  const m = x => x && x.state === "OFFEN" && x.ody && x.ody.lang === lang && x.ody.i === i;
+  return m(S.exams[kid]) ? "exam" : m(S.dk[kid]) ? "dk" : m(S.tasks[kid]) ? "task" : null;
+}
+function odyGo(kid, what) {
+  if (what === "exam") { S.mode = "pruefung"; } else { S.mode = "lernen"; S.hkind[kid] = what === "dk" ? "diktat" : (isHear((S.tasks[kid] || {}).dir) ? "hoer" : "vok"); }
+  S.tab = "lernen"; renderAll(); window.scrollTo(0, 0);
+}
+const odyToMap = lang => { if (lang) S.odyLang = lang; S.tab = "ziele"; S.zsub = "ody"; renderAll(); window.scrollTo(0, 0); };
+async function odyStart(kid, lang) {
+  if (S.busy) return;
+  const i = odyCur(kid, lang).i, p = odyPlan(kid, lang, i), ref = { lang, i }, fl = { s: "", k: "", l: "", b: "" };
+  if (p.kind === "dk") { await dkStart(kid, lang, odyBook(kid, lang), +p.arg, (!LOCAL && S.sample) ? "neu" : "sammlung", null, ref); return; }
+  if (p.kind === "gate") {
+    const run = S.exams[kid];
+    if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Prüfung ersetzen?", "Die bisherigen Antworten in der laufenden Prüfung gehen verloren.", "Torprüfung starten", true))) return;
+    const items = drawItems(lang, "d2f", 1, MAXV, kid, fl, true).items.slice(0, 20);
+    if (items.length < 5) { toast("Für die Torprüfung braucht es mindestens 5 Vokabeln."); return; }
+    S.busy = true;
+    try {
+      const exam = { kid, kidName: kidName(kid), mode: "pruefung", state: "OFFEN", lang, langName: langName(lang), dir: "d2f", flt: fl, created: Date.now(), logged: false, ody: ref, pass: ODY.need, secs: chapSecs(), pos: 0, pstart: null, items };
+      await wset("exam/" + kid, exam); S.exams[kid] = exam; S.tab = "lernen"; S.mode = "pruefung"; toast("Die Torprüfung beginnt. Viel Erfolg!");
+    } catch (e) { toastErr(e, "Die Torprüfung konnte nicht gestartet werden."); }
+    S.busy = false; renderAll(); window.scrollTo(0, 0); return;
+  }
+  const run = S.tasks[kid];
+  if (run && run.state === "OFFEN" && !(await confirmBox("Laufende Übung ersetzen?", "Die bisherigen Antworten in der laufenden Übung gehen verloren.", "Insel ansteuern", true))) return;
+  const ws = S.vocab[lang] || [], dir = p.kind === "storm" || p.kind === "calm" ? "mix" : p.arg;
+  const items = p.kind === "storm" ? dkShuffle(p.weak).map(n => { const w = ws[n - 1]; return { n, f: w.f, d: w.d, ...qa(w, dir), a: "", ok: null }; })
+    : drawItems(lang, dir, 1, MAXV, kid, fl, true).items.slice(0, p.kind === "hoer" ? 10 : 12);
+  if (!items.length) { toast("Für diese Insel gibt es keine passenden Vokabeln."); return; }
+  S.busy = true;
+  try {
+    const task = { kid, kidName: kidName(kid), state: "OFFEN", lang, langName: langName(lang), dir, from: 1, to: MAXV, flt: fl, sel: "range", tips: !!cfgOf(kid).tips, rep: 0, created: Date.now(), counted: false, src: "ody", ody: ref, plays: 0, items };
+    await wset("task/" + kid, task); S.tasks[kid] = task; S.hkind[kid] = p.kind === "hoer" ? "hoer" : "vok"; S.mode = "lernen"; S.tab = "lernen"; toast("Kurs auf " + odyIsle(i) + "!");
+  } catch (e) { toastErr(e, "Die Insel konnte nicht angesteuert werden."); }
+  S.busy = false; renderAll(); window.scrollTo(0, 0);
+}
+/* Ergebnis einer Odyssee-Aufgabe: ab 90 % geht es zur nächsten Insel */
+async function odyRecord(kid, ref, pct) {
+  if (!ref || !ref.lang || !Number.isFinite(+ref.i)) return;
+  const p = odyNorm(S.ody[kid]), cur = p.l[ref.lang] || { i: 0, tries: 0, ts: 0 };
+  if (cur.i !== ref.i) return;                                     /* schon weiter oder veraltet: nichts doppelt werten */
+  const name = odyIsle(ref.i), meta = { lang: ref.lang, kl: "" }, j = ref.i % 11, s = Math.floor(ref.i / 11), id = encK(ref.lang).slice(0, 40) + "_" + ref.i;
+  if (pct + 1e-9 < ODY.need) {
+    p.l[ref.lang] = { ...cur, tries: (cur.tries || 0) + 1 }; await wset("ody/" + kid, p); S.ody[kid] = p;
+    toast(name + ": noch nicht erobert. Ab " + ODY.need + " % geht die Reise weiter."); return;
+  }
+  p.l[ref.lang] = { i: ref.i + 1, tries: 0, ts: Date.now() }; await wset("ody/" + kid, p); S.ody[kid] = p;
+  if (j === 10) {
+    await awardPoints(kid, "og" + id, 2, ODY.gate, "Wort-Odyssee · Tor", meta);
+    if (!celebrate({ kind: "odygate", kid, main: "Die " + odyHall(s + 1) + " ist offen", sub: "+" + ODY.gate + " Punkte" })) toast("Das Tor öffnet sich! +" + ODY.gate + " Punkte");
+    return;
+  }
+  await awardPoints(kid, "oi" + id, 2, ODY.island, "Wort-Odyssee · " + name, meta);
+  if (j === 9) {
+    await awardPoints(kid, "ok" + id, 2, ODY.key, "Wort-Odyssee · Schlüssel", meta);
+    if (!celebrate({ kind: "odykey", kid, main: "Die Karte ist vollständig", sub: "Das Tor wartet · +" + (ODY.island + ODY.key) + " Punkte" })) toast("Schlüssel gefunden! +" + (ODY.island + ODY.key) + " Punkte");
+  } else if (!celebrate({ kind: "ody", kid, main: name + " erobert", sub: "Kartenstück " + (j + 1) + " von 10 · +" + ODY.island + " Punkte" })) toast(name + " erobert! +" + ODY.island + " Punkte");
+}
+const odyEsc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
+function odyMapSvg(i) {
+  const s = Math.floor(i / 11), cur = i % 11, P = [[70, 500], [178, 462], [275, 418], [215, 368], [100, 328], [62, 276], [165, 238], [272, 198], [232, 148], [118, 116], [175, 52]];
+  const glyph = st => st.startsWith("vok") ? "Aa" : st.startsWith("hoer") ? "♪" : st.startsWith("dk") ? "✎" : st === "storm" ? "⚡" : "";
+  let d = "M" + P[0].join(" ");
+  for (let k = 1; k < P.length; k++) { const [x0, y0] = P[k - 1], [x1, y1] = P[k]; d += " Q" + ((x0 + x1) / 2 + (k % 2 ? 34 : -34)) + " " + ((y0 + y1) / 2) + " " + x1 + " " + y1; }
+  let g = '<svg viewBox="0 0 340 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Seekarte ' + odyEsc(odyHall(s)) + ': Station ' + (cur + 1) + ' von 11">'
+    + '<defs><linearGradient id="odysea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d2a45"/><stop offset="1" stop-color="#2a76a9"/></linearGradient></defs>'
+    + '<rect width="340" height="560" rx="18" fill="url(#odysea)"/>';
+  for (let k = 0; k < 14; k++) { const x = (k * 97) % 300 + 20, y = (k * 151) % 470 + 40; g += '<path d="M' + x + ' ' + y + ' q6 -5 12 0 q6 5 12 0" fill="none" stroke="#ffffff" stroke-opacity=".22" stroke-width="1.6" stroke-linecap="round"/>'; }
+  g += '<path d="M0 530 Q85 512 170 530 T340 526 L340 542 Q340 560 322 560 L18 560 Q0 560 0 542 Z" fill="#e7d39c"/>';
+  g += '<path d="' + d + '" fill="none" stroke="#f6e7b8" stroke-opacity=".75" stroke-width="2.4" stroke-dasharray="6 7" stroke-linecap="round"/>';
+  P.forEach(([x, y], k) => {
+    const st = ODY_STEPS[k], done = k < cur, now = k === cur, op = done || now ? 1 : 0.5, name = odyEsc(odyIsle(s * 11 + k));
+    if (k === 10) {
+      g += '<g opacity="' + (op < 1 ? 0.75 : 1) + '" transform="translate(' + x + ' ' + y + ')"><rect x="-34" y="10" width="68" height="8" fill="#f3e3b3"/><polygon points="-38,-14 0,-34 38,-14" fill="#f3e3b3"/>';
+      [-26, -9, 9, 26].forEach(cx => { g += '<rect x="' + (cx - 4) + '" y="-12" width="8" height="22" fill="#e8d49a"/>'; });
+      g += (now ? '<circle r="44" fill="none" stroke="#ffd84d" stroke-width="3"/>' : '') + '</g>';
+    } else {
+      if (st === "storm" && !done) g += '<g opacity="' + op + '"><ellipse cx="' + (x + 6) + '" cy="' + (y - 30) + '" rx="20" ry="9" fill="#9aa6b2"/><ellipse cx="' + (x - 8) + '" cy="' + (y - 33) + '" rx="13" ry="9" fill="#b6c0ca"/><path d="M' + (x + 2) + ' ' + (y - 24) + ' l-6 10 h6 l-4 9" fill="none" stroke="#ffd84d" stroke-width="2"/></g>';
+      g += '<g><ellipse cx="' + x + '" cy="' + (y + 3) + '" rx="27" ry="17" fill="#000" fill-opacity=".18"/><ellipse cx="' + x + '" cy="' + y + '" rx="25" ry="15" fill="' + (done || now ? "#e9d6a0" : "#4f6b84") + '"/>'
+        + (done ? '<ellipse cx="' + x + '" cy="' + (y - 3) + '" rx="15" ry="8" fill="#4f9a5f"/><path d="M' + (x + 8) + ' ' + (y - 6) + ' v-20 l12 5 l-12 5" fill="#bf3329" stroke="#5a3b1c" stroke-width="1.5"/>' : '')
+        + '<text x="' + x + '" y="' + (y + 5) + '" text-anchor="middle" font-size="13" font-weight="700" fill="' + (now ? "#1b2a41" : "#c9d6e3") + '">' + (done ? "" : glyph(st)) + '</text></g>';
+      if (now) g += '<ellipse cx="' + x + '" cy="' + y + '" rx="31" ry="21" fill="none" stroke="#ffd84d" stroke-width="3"/>';
+    }
+    g += '<text x="' + x + '" y="' + (k === 10 ? y + 36 : y + 30) + '" text-anchor="middle" font-size="11" font-weight="600" fill="#ffffff" fill-opacity="' + (done || now ? 1 : 0.7) + '">' + name + '</text>';
+  });
+  const [sx, sy] = P[cur];
+  g += '<g transform="translate(' + (sx - (cur === 10 ? 58 : 50)) + ' ' + (sy - 20) + ')"><path d="M0 18 h30 l-5 8 h-20 z" fill="#7a4a24"/><path d="M15 17 v-24" stroke="#5a3b1c" stroke-width="2"/><path d="M16 -6 l12 21 h-12 z" fill="#fff6dd"/><path d="M14 -4 l-10 19 h10 z" fill="#ffd84d"/></g>';
+  return g + "</svg>";
+}
 function odysseeView() {
-  const kid = S.kid, ls = allowedLangs(kid).map(l => l.name);
-  return h("div", { class: "stack" }, h("div", { class: "card stack" }, h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("h2", null, "Die Wort-Odyssee"), h("span", { class: "pill mid" }, "Coming soon")),
-    h("p", { style: "margin:0;font-style:italic;line-height:1.5" }, "Weit hinter dem Horizont, wo das Meer die Worte der ganzen Welt an Land spült, ragt die große Bibliothek von Alexandria auf. Man erzählt, ihre Hallen bewahren jedes Wort, das je gesprochen wurde, geschrieben auf Rollen aus Sonnenlicht, in Tinte aus Sternenstaub."),
-    h("p", { style: "margin:0;font-style:italic;line-height:1.5" }, "Doch ihre Tore öffnen sich nur denen, die die Sprachen der Welt kennen. Deine Reise beginnt an der Küste deiner ersten Sprache. Jede Aufgabe ist eine Insel, jedes gelöste Rätsel ein Stück der alten Karte. Sammle die Schlüssel, bezwinge die Stürme des Vergessens und finde den Weg in die verborgenen Hallen."),
-    h("p", { style: "margin:0;font-style:italic;line-height:1.5" }, "Für jede Sprache, die du lernst, wartet ein eigener Pfad. Die Segel werden gerade gesetzt. Bald legt dein Schiff ab."),
-    ls.length ? h("div", { class: "stack" }, h("b", null, "Deine Pfade"), h("div", { class: "row" }, ls.map(n => h("span", { class: "pill n" }, n)))) : null,
-    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Die Aufgaben der Odyssee werden nach und nach hinzugefügt.")));
+  const kid = S.kid, langs = allowedLangs(kid).filter(l => visWords(l.id, kid).length), w = h("div", { class: "stack" });
+  if (!langs.length) { w.append(h("div", { class: "empty" }, "Für die Wort-Odyssee braucht es zuerst Vokabeln.")); return w; }
+  if (!langs.some(l => l.id === S.odyLang)) S.odyLang = langs[0].id;
+  const lang = S.odyLang, cur = odyCur(kid, lang), i = cur.i, s = Math.floor(i / 11), j = i % 11, keys = s + (j === 10 ? 1 : 0), p = odyPlan(kid, lang, i), run = odyRunning(kid, lang, i);
+  w.append(h("div", { class: "card stack" }, h("h2", null, "Die Wort-Odyssee"), h("p", { style: "margin:0;font-style:italic;line-height:1.5" }, ODY_STORY[Math.min(s, ODY_STORY.length - 1)])));
+  if (langs.length > 1) w.append(h("div", { class: "seg", role: "group", "aria-label": "Sprache", style: "margin:0" }, langs.map(l => h("button", { type: "button", "aria-pressed": l.id === lang ? "true" : "false", onclick: () => { S.odyLang = l.id; renderAll(); } }, l.name))));
+  w.append(h("div", { class: "row" }, h("span", { class: "pill n" }, odyHall(s)), h("span", { class: "pill ok" }, "Kartenstücke " + Math.min(j, 10) + " / 10"), h("span", { class: "pill gift" }, "🗝 " + keys + (keys === 1 ? " Schlüssel" : " Schlüssel")), s ? h("span", { class: "pill mid" }, s + (s === 1 ? " Halle offen" : " Hallen offen")) : null));
+  const map = h("div", { class: "odymap" }); map.innerHTML = odyMapSvg(i); w.append(map);
+  w.append(h("div", { class: "card stack" },
+    h("div", { class: "row", style: "justify-content:space-between;flex-wrap:nowrap" }, h("h3", { style: "margin:0" }, j === 10 ? odyIsle(i) : "Nächste Insel: " + odyIsle(i)), h("span", { class: "muted" }, (j + 1) + " / 11")),
+    h("p", { style: "margin:0" }, p.desc), p.note ? h("p", { class: "muted", style: "margin:0;font-size:13px" }, p.note) : null,
+    h("p", { class: "muted", style: "margin:0;font-size:13px" }, "Erobert ab " + ODY.need + " %. " + (j === 10 ? "Das Tor bringt " + ODY.gate + " Punkte und öffnet die nächste Halle." : "Jede Insel bringt " + ODY.island + " Punkte" + (j === 9 ? ", dazu den Schlüssel für das Tor (+" + ODY.key + ")." : ".")) + (cur.tries ? " Bisherige Versuche hier: " + cur.tries + "." : "")),
+    run ? h("button", { class: "btn", onclick: () => odyGo(kid, run) }, "Weiter auf der Insel")
+      : h("button", { class: "btn", style: j === 10 ? "background:var(--ok)" : null, disabled: S.busy || !S.canWrite, onclick: () => odyStart(kid, lang) }, S.dkGen ? "Der Diktat-Text wird geschrieben …" : j === 10 ? "Torprüfung starten" : "Insel ansteuern")));
+  w.append(h("details", { class: "card" }, h("summary", { style: "cursor:pointer;font-weight:600" }, "So funktioniert die Reise"),
+    h("ul", { style: "margin:10px 0 0;padding-left:20px;display:grid;gap:6px" },
+      h("li", null, "Jede Sprache hat ihre eigene Route. Eine Halle besteht aus 10 Inseln und einem Tor."),
+      h("li", null, "Die Inseln wechseln sich ab: Vokabeln (Aa), Hörverständnis (♪), Diktat (✎) und Stürme des Vergessens (⚡) mit deinen wackligsten Vokabeln."),
+      h("li", null, "Ab " + ODY.need + " % ist eine Insel erobert und du bekommst ein Kartenstück. Sonst versuchst du sie einfach nochmal."),
+      h("li", null, "Sind alle 10 Kartenstücke gesammelt, gibt es den Schlüssel. Die Torprüfung öffnet dann die nächste Halle der Bibliothek."),
+      h("li", null, "Punkte: Insel " + ODY.island + ", Schlüssel " + ODY.key + ", Tor " + ODY.gate + ". Die normalen Punkte für die Übung gibt es zusätzlich."))));
+  return w;
 }
 /* ---- Vokabelliste: Markieren durch Wischen ---- */
 let vDrag = null;
@@ -3910,6 +4354,15 @@ function wire(db) {
     });
     S.blockDocs = blocks; S.vocab = vocab; S.vocabLoaded = true; softRender();
   }, bad);
+  db.collection("dkrun").onSnapshot(qs => {
+    qs.docs.forEach(d => { const nt = clone(d.data()), cur = S.dk[d.id], same = cur && cur.created === nt.created;
+      if (same && ((cur.state === "OFFEN" && nt.state === "OFFEN") || (cur.state === "ABGEGEBEN" && nt.state === "OFFEN"))) return;
+      S.dk[d.id] = nt; });
+    qs.docChanges().forEach(c => { if (c.type === "removed") delete S.dk[c.doc.id]; });
+    softRender();
+  }, bad);
+  db.collection("ody").onSnapshot(qs => { const m = {}; qs.docs.forEach(d => { m[d.id] = clone(d.data()); }); S.ody = m; softRender(); }, bad);
+  db.collection("dktext").onSnapshot(qs => { const m = {}; qs.docs.forEach(d => { const x = clone(d.data()); if (x && x.id && x.text) m[x.id] = x; }); S.dkTexts = m; softRender(); }, bad);
   db.collection("log").orderBy("ts", "desc").limit(200).onSnapshot(qs => { S.log = qs.docs.map(d => d.data()); softRender(); }, bad);
 }
 async function boot() {
